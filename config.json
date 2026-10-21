@@ -1,0 +1,32 @@
+{
+  "cameras_rgb": [
+    {"id": "rgb0", "index": 1, "label": "RGB 1"},
+    {"id": "rgb1", "index": 2, "label": "RGB 2"}
+  ],
+  "camera_thermique": {"id": "thermal", "index": 4, "label": "Thermique (banquette arrière)", "active": false},
+
+  "resolution": [1280, 720],
+  "modele": "yolov8m.pt",
+  "images_par_essai": 10,
+  "repetitions_cible": 10,
+  "confiance_min": 0.4,
+  "ratio_presence": 0.5,
+
+  "thermique": {
+    "seuil_celsius": 30.0,
+    "seuil_8bit": 200,
+    "pixels_chauds_min": 20
+  },
+
+  "scenarios": [
+    {"code": "S1", "nom": "Enfant (poupée chauffée) dans siège auto arrière", "verite": "vivant"},
+    {"code": "S2", "nom": "Enfant sous une couverture", "verite": "vivant"},
+    {"code": "S3", "nom": "Animal sur la banquette arrière", "verite": "vivant"},
+    {"code": "S4", "nom": "Animal au sol, derrière siège avant", "verite": "vivant"},
+    {"code": "S5", "nom": "Objet de valeur (sac, ordinateur, téléphone)", "verite": "objet"},
+    {"code": "S6", "nom": "Objet anodin (vêtement, sacoche vide)", "verite": "vide"},
+    {"code": "S7", "nom": "Habitacle vide", "verite": "vide"},
+    {"code": "S8", "nom": "Source chaude inerte (sac au soleil, gourde chaude)", "verite": "vide"}
+  ],
+  "variantes": ["Jour", "Nuit / faible lumière", "Contre-jour", "Occultation partielle"]
+}

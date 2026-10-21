@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CARE · Détection d'oubli</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">C</div>
+    <div>
+      <h1>CARE · Détection d'oubli dans l'habitacle</h1>
+      <p>Groupe 2 · Banc de test A1 (RGB) / A2 (RGB + thermique)</p>
+    </div>
+  </div>
+  <div class="status">
+    <span id="badge-demo" class="pill pill-demo" hidden>MODE DÉMO</span>
+    <span id="st-modele" class="pill"><i></i>Modèle</span>
+    <span id="st-rgb" class="pill"><i></i>Caméras</span>
+    <span id="st-th" class="pill"><i></i>Thermique</span>
+    <a class="btn btn-ghost" href="/api/export">Exporter CSV</a>
+  </div>
+</header>
+
+<main>
+  <!-- ===== Live + essai ===== -->
+  <section class="row-live">
+    <div class="card cams">
+      <div class="card-head">
+        <h2>Flux en direct</h2>
+        <span class="muted">4 caméras RGB 110° · vue plongeante</span>
+      </div>
+      <div class="cam-grid" id="cam-grid"></div>
+      <div class="thermal">
+        <div class="cam-tile thermal-img">
+          <img id="img-thermal" alt="Caméra thermique">
+          <span class="cam-label"><i class="dot" id="dot-thermal"></i>Thermique</span>
+          <span class="cam-off" id="off-thermal">Hors ligne</span>
+        </div>
+        <div class="thermal-info">
+          <h3>Caméra thermique 80×60</h3>
+          <dl>
+            <div><dt>Mode</dt><dd id="th-mode">—</dd></div>
+            <div><dt>Pixels chauds</dt><dd id="th-px">—</dd></div>
+            <div><dt>T° max</dt><dd id="th-tmax">—</dd></div>
+          </dl>
+          <p class="muted small">Contour blanc = zone au-dessus du seuil. Calibrer le seuil dans
+            <code>config.json</code> avec un essai à vide puis un essai avec la poupée chauffée.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <form class="card" id="form-essai">
+        <div class="card-head"><h2>Nouvel essai</h2><span class="muted" id="compteur"></span></div>
+        <label>Scénario
+          <select id="f-scenario" required></select>
+        </label>
+        <label>Variante
+          <select id="f-variante"></select>
+        </label>
+        <fieldset>
+          <legend>Vérité terrain</legend>
+          <div class="seg" id="f-verite">
+            <button type="button" data-v="vivant">Vivant</button>
+            <button type="button" data-v="objet">Objet de valeur</button>
+            <button type="button" data-v="vide">Rien à signaler</button>
+          </div>
+        </fieldset>
+        <label>Commentaire <span class="muted">(optionnel)</span>
+          <input id="f-commentaire" placeholder="ex. poupée côté porte, store baissé">
+        </label>
+        <button class="btn btn-primary" id="btn-lancer" type="submit">
+          <span class="spinner" hidden></span><span class="txt">Lancer l'analyse</span>
+        </button>
+        <p class="muted small">Portes fermées, conducteur sorti, puis lancer.</p>
+      </form>
+
+      <div class="card result" id="result">
+        <div class="card-head"><h2>Dernier résultat</h2></div>
+        <div id="result-body" class="empty">Aucun essai pour l'instant.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Indicateurs ===== -->
+  <section class="kpis" id="kpis"></section>
+
+  <!-- ===== Par scénario ===== -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Résultats par scénario</h2>
+      <div class="legend">
+        <span><i class="sw sw-a1"></i>A1 · RGB seul</span>
+        <span><i class="sw sw-a2"></i>A2 · RGB + thermique</span>
+      </div>
+    </div>
+    <p class="muted small">Scénarios « vivant » : rappel (présences détectées). Autres scénarios : taux de bonne non-alerte.</p>
+    <div id="chart" class="chart"></div>
+  </section>
+
+  <!-- ===== Historique ===== -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Historique des essais</h2>
+      <span class="muted" id="nb-essais"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="table">
+        <thead><tr>
+          <th>Heure</th><th>Scénario</th><th>Variante</th><th>Vérité</th>
+          <th>RGB</th><th>Thermique</th><th>A1</th><th>A2</th><th>Objets</th>
+          <th class="num">Latence</th><th>Images</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+<div id="lightbox" class="lightbox" hidden><img alt=""></div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

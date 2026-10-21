@@ -1,0 +1,10 @@
+﻿id;horodatage;scenario;variante;verite;vivant_rgb;vivant_thermique;classes_vivant;objets;cameras_vivant;pixels_chauds;tmax;latence_s;commentaire
+20261021-093107;2026-10-21T09:31:07;S5;Jour;objet;0;;;;;;;2.29;tel sur le siege
+20261021-093955;2026-10-21T09:39:55;S5;Jour;objet;1;;personne;;rgb1;;;15.42;tel oublié +personne
+20261021-094040;2026-10-21T09:40:41;S5;Jour;objet;0;;;;rgb0;;;15.4;
+20261021-094107;2026-10-21T09:41:07;S5;Jour;objet;0;;;;;;;14.08;
+20261021-094142;2026-10-21T09:41:42;S5;Jour;objet;1;;personne;;rgb0;;;14.77;
+20261021-094231;2026-10-21T09:42:31;S5;Jour;objet;0;;;ordinateur;;;;12.65;
+20261021-094304;2026-10-21T09:43:04;S5;Jour;objet;1;;personne;ordinateur;rgb0;;;14.67;
+20261021-094341;2026-10-21T09:43:41;S5;Jour;objet;0;;;;;;;13.79;
+20261021-094430;2026-10-21T09:44:30;S5;Jour;objet;1;;personne;;rgb0;;;16.22;
