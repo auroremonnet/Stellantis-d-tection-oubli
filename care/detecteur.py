@@ -20,8 +20,9 @@ CLASSES = list(VIVANT) + list(VALEUR)
 
 
 class Detecteur:
-    def __init__(self, cfg):
+    def __init__(self, cfg, alerteur=None):
         self.cfg = cfg
+        self.alerteur = alerteur
         self.model = None
         self.erreur = ""
         self._lock = threading.Lock()
@@ -64,6 +65,8 @@ class Detecteur:
                         ids.append(s.id)
                 if frames:
                     vus, plots = self._inferer(frames)
+                    if self.alerteur is not None:
+                        self.alerteur.traiter(vus, plots)
                     for sid, v in zip(ids, vus):
                         par_cam[sid] |= {c for c in v if c in VIVANT}
                     for c in set().union(*vus):

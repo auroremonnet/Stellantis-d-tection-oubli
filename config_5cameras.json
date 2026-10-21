@@ -20,6 +20,15 @@
     "pixels_chauds_min": 20
   },
 
+  "alertes": {
+    "actif": true,
+    "topic": "care-stellantis-g2-CHANGEMOI",
+    "classes_surveillees": ["sac à dos", "sac à main", "valise", "ordinateur", "téléphone"],
+    "delai_absence_s": 10,
+    "delai_confirmation_s": 3,
+    "cooldown_s": 60
+  },
+
   "scenarios": [
     {"code": "S1", "nom": "Enfant (poupée chauffée) dans siège auto arrière", "verite": "vivant"},
     {"code": "S2", "nom": "Enfant sous une couverture", "verite": "vivant"},

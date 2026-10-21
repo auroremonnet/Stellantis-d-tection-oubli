@@ -16,6 +16,7 @@ from threading import Timer
 import cv2
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file, send_from_directory
 
+from care.alertes import Alerteur
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.stockage import Journal, metriques
@@ -43,7 +44,8 @@ RGB = [ClsRGB(c["id"], c["index"], c["label"], CFG["resolution"]).demarrer() for
 cth = CFG["camera_thermique"]
 THERM = ClsTh(cth["id"], cth["index"], cth["label"], CFG["thermique"]).demarrer() if cth.get("active") else None
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
-DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
+ALERTEUR = Alerteur(CFG.get("alertes"))
+DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG, alerteur=ALERTEUR)
 
 app = Flask(__name__)
 

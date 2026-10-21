@@ -37,6 +37,16 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 1. Faire un essai à vide, puis un essai avec la poupée chauffée.
 2. Régler ensuite dans `config.json` le seuil (`seuil_celsius` en radiométrique, `seuil_8bit` sinon) et `pixels_chauds_min`.
 
+## Alertes téléphone
+
+Le banc envoie une notification push (via [ntfy.sh](https://ntfy.sh), gratuit et sans compte) quand un objet de valeur est détecté alors que plus personne n'est dans l'habitacle depuis `delai_absence_s` secondes. La notification contient le nom de l'objet, l'heure et l'image annotée.
+
+1. Installer l'appli **ntfy** (Android / iOS).
+2. Dans l'appli, s'abonner au topic de `config.json` (`alertes.topic`). **Changer la valeur par défaut** pour un nom unique au groupe : le topic fait office de mot de passe.
+3. Tester la réception sans lancer la caméra : `python test_alerte.py`.
+
+Réglages dans `config.json`, section `alertes` : `actif` (interrupteur général), `classes_surveillees`, `delai_absence_s` (personne partie depuis, défaut 10 s), `delai_confirmation_s` (objet vu en continu pendant, défaut 3 s), `cooldown_s` (délai mini entre deux alertes pour le même objet, défaut 60 s). Les alertes ne sont actives qu'en mode réel (pas en `--demo`), et uniquement pendant une analyse (YOLO ne tourne que là).
+
 ## Données
 
 - `data/essais/essais.csv` : un essai par ligne, s'ouvre directement dans Excel (bouton **Exporter CSV**).
@@ -51,6 +61,8 @@ config.json          caméras, seuils, scénarios, variantes
 lister_cameras.py    trouver les index des caméras
 care/cameras.py      acquisition (1 thread par caméra) + sources démo
 care/detecteur.py    YOLO, seuil thermique, fusion
+care/alertes.py      notifications push ntfy.sh (objet oublié)
+test_alerte.py       tester la réception des alertes sur le téléphone
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
 templates/, static/  dashboard
 ```
