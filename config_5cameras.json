@@ -1,34 +1,128 @@
 {
   "cameras_rgb": [
-    {"id": "rgb0", "index": 0, "label": "Avant gauche"},
-    {"id": "rgb1", "index": 1, "label": "Avant droite"},
-    {"id": "rgb2", "index": 2, "label": "Arrière gauche"},
-    {"id": "rgb3", "index": 3, "label": "Arrière droite"}
+    {
+      "id": "rgb0",
+      "index": 1,
+      "label": "Avant gauche"
+    },
+    {
+      "id": "rgb1",
+      "index": 2,
+      "label": "Avant droite"
+    },
+    {
+      "id": "rgb2",
+      "index": 3,
+      "label": "Arrière gauche"
+    },
+    {
+      "id": "rgb3",
+      "index": 4,
+      "label": "Arrière droite"
+    }
   ],
-  "camera_thermique": {"id": "thermal", "index": 4, "label": "Thermique (banquette arrière)", "active": true},
-
-  "resolution": [1280, 720],
-  "modele": "yolov8n.pt",
+  "camera_thermique": {
+    "id": "thermal",
+    "index": 5,
+    "label": "Thermique (banquette arrière)",
+    "active": true
+  },
+  "resolution": [
+    1280,
+    720
+  ],
   "images_par_essai": 10,
   "repetitions_cible": 10,
-  "confiance_min": 0.4,
   "ratio_presence": 0.5,
-
+  "detection": {
+    "moteur": "yoloe",
+    "modele": "yoloe-11s-seg.pt",
+    "imgsz": 640,
+    "confiance_vivant": 0.4,
+    "confiance_objet": 0.25,
+    "prompts_vivant": [
+      "person",
+      "child",
+      "baby",
+      "cat",
+      "dog"
+    ],
+    "prompts_valeur": [
+      "cell phone",
+      "car key",
+      "keys",
+      "wallet",
+      "credit card",
+      "handbag",
+      "backpack",
+      "bag",
+      "laptop",
+      "tablet",
+      "glasses",
+      "watch",
+      "headphones"
+    ],
+    "zoom_zones": true,
+    "alerte_zone_inconnue": true
+  },
+  "reference": {
+    "iou_fixe": 0.5,
+    "seuil_changement": 35,
+    "aire_min": 1500,
+    "part_max_image": 0.6,
+    "zones_max": 6
+  },
   "thermique": {
     "seuil_celsius": 30.0,
     "seuil_8bit": 200,
     "pixels_chauds_min": 20
   },
-
   "scenarios": [
-    {"code": "S1", "nom": "Enfant (poupée chauffée) dans siège auto arrière", "verite": "vivant"},
-    {"code": "S2", "nom": "Enfant sous une couverture", "verite": "vivant"},
-    {"code": "S3", "nom": "Animal sur la banquette arrière", "verite": "vivant"},
-    {"code": "S4", "nom": "Animal au sol, derrière siège avant", "verite": "vivant"},
-    {"code": "S5", "nom": "Objet de valeur (sac, ordinateur, téléphone)", "verite": "objet"},
-    {"code": "S6", "nom": "Objet anodin (vêtement, sacoche vide)", "verite": "vide"},
-    {"code": "S7", "nom": "Habitacle vide", "verite": "vide"},
-    {"code": "S8", "nom": "Source chaude inerte (sac au soleil, gourde chaude)", "verite": "vide"}
+    {
+      "code": "S1",
+      "nom": "Enfant (poupée chauffée) dans siège auto arrière",
+      "verite": "vivant"
+    },
+    {
+      "code": "S2",
+      "nom": "Enfant sous une couverture",
+      "verite": "vivant"
+    },
+    {
+      "code": "S3",
+      "nom": "Animal sur la banquette arrière",
+      "verite": "vivant"
+    },
+    {
+      "code": "S4",
+      "nom": "Animal au sol, derrière siège avant",
+      "verite": "vivant"
+    },
+    {
+      "code": "S5",
+      "nom": "Objet de valeur (sac, ordinateur, téléphone)",
+      "verite": "objet"
+    },
+    {
+      "code": "S6",
+      "nom": "Objet anodin (vêtement, sacoche vide)",
+      "verite": "vide"
+    },
+    {
+      "code": "S7",
+      "nom": "Habitacle vide",
+      "verite": "vide"
+    },
+    {
+      "code": "S8",
+      "nom": "Source chaude inerte (sac au soleil, gourde chaude)",
+      "verite": "vide"
+    }
   ],
-  "variantes": ["Jour", "Nuit / faible lumière", "Contre-jour", "Occultation partielle"]
+  "variantes": [
+    "Jour",
+    "Nuit / faible lumière",
+    "Contre-jour",
+    "Occultation partielle"
+  ]
 }

@@ -5,7 +5,7 @@ import threading
 
 COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", "vivant_thermique",
             "classes_vivant", "objets", "cameras_vivant", "pixels_chauds", "tmax", "latence_s",
-            "commentaire"]
+            "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee"]
 
 
 def _bool(v):
@@ -20,20 +20,40 @@ class Journal:
         if not os.path.exists(chemin):
             with open(chemin, "w", newline="", encoding="utf-8-sig") as fh:
                 csv.writer(fh, delimiter=";").writerow(COLONNES)
+        else:
+            self._migrer()
+
+    def _migrer(self):
+        """Ajoute les colonnes manquantes à un CSV écrit par une version précédente."""
+        with open(self.chemin, encoding="utf-8-sig") as fh:
+            r = csv.reader(fh, delimiter=";")
+            entete = next(r, None)
+            lignes = list(r)
+        if entete is None or entete == COLONNES:
+            return
+        with open(self.chemin, "w", newline="", encoding="utf-8-sig") as fh:
+            w = csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";")
+            w.writeheader()
+            for l in lignes:
+                w.writerow({k: v for k, v in zip(entete, l) if k in COLONNES})
 
     def lire(self):
         with self._lock, open(self.chemin, encoding="utf-8-sig") as fh:
             lignes = list(csv.DictReader(fh, delimiter=";"))
         for l in lignes:
+            for k in COLONNES:
+                l.setdefault(k, "")
             l["vivant_rgb"] = _bool(l["vivant_rgb"])
             l["vivant_thermique"] = _bool(l["vivant_thermique"])
+            l["reference_utilisee"] = _bool(l["reference_utilisee"])
+            l["lumiere_changee"] = _bool(l["lumiere_changee"])
             l.update(evaluer(l))
         return lignes
 
     def ajouter(self, ligne):
         with self._lock, open(self.chemin, "a", newline="", encoding="utf-8-sig") as fh:
             row = {k: ligne.get(k, "") for k in COLONNES}
-            for k in ("vivant_rgb", "vivant_thermique"):
+            for k in ("vivant_rgb", "vivant_thermique", "reference_utilisee", "lumiere_changee"):
                 row[k] = "" if row[k] in ("", None) else int(bool(row[k]))
             for k in ("classes_vivant", "objets", "cameras_vivant"):
                 if isinstance(row[k], list):

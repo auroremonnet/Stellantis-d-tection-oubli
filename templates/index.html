@@ -30,7 +30,7 @@
     <div class="card cams">
       <div class="card-head">
         <h2>Flux en direct</h2>
-        <span class="muted">4 caméras RGB 110° · vue plongeante</span>
+        <span class="muted" id="cams-sub">Caméras RGB · vue plongeante</span>
       </div>
       <div class="cam-grid" id="cam-grid"></div>
       <div class="thermal">
@@ -53,6 +53,17 @@
     </div>
 
     <div class="side">
+      <div class="card ref" id="ref">
+        <div class="card-head"><h2>Référence habitacle vide</h2><span class="muted" id="ref-etat">—</span></div>
+        <p class="muted small">Habitacle vide, portes fermées, puis capturer. Les objets fixes (boucle de ceinture,
+          console…) sont ensuite ignorés et tout ce qui apparaît en plus est signalé, même non reconnu.</p>
+        <div class="ref-actions">
+          <button class="btn btn-secondary" type="button" id="btn-ref">Capturer la référence</button>
+          <button class="btn btn-link" type="button" id="btn-ref-del" hidden>Effacer</button>
+        </div>
+        <div class="ref-thumbs" id="ref-thumbs"></div>
+      </div>
+
       <form class="card" id="form-essai">
         <div class="card-head"><h2>Nouvel essai</h2><span class="muted" id="compteur"></span></div>
         <label>Scénario
@@ -111,7 +122,7 @@
       <table id="table">
         <thead><tr>
           <th>Heure</th><th>Scénario</th><th>Variante</th><th>Vérité</th>
-          <th>RGB</th><th>Thermique</th><th>A1</th><th>A2</th><th>Objets</th>
+          <th>RGB</th><th>Thermique</th><th>A1</th><th>A2</th><th>Objets</th><th title="Zones nouvelles par rapport à la référence">Zones</th>
           <th class="num">Latence</th><th>Images</th><th></th>
         </tr></thead>
         <tbody></tbody>

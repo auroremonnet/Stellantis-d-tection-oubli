@@ -18,6 +18,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
+from care.reference import Reference
 from care.stockage import Journal, metriques
 
 RACINE = os.path.dirname(os.path.abspath(__file__))
@@ -44,6 +45,9 @@ cth = CFG["camera_thermique"]
 THERM = ClsTh(cth["id"], cth["index"], cth["label"], CFG["thermique"]).demarrer() if cth.get("active") else None
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
+REF_PARAMS = {"iou_fixe": 0.5, "seuil_changement": 35, "aire_min": 1500, "part_max_image": 0.6, "zones_max": 6}
+REF_PARAMS.update(CFG.get("reference", {}))
+REFERENCE = Reference(os.path.join(DATA, "reference"), REF_PARAMS)
 
 app = Flask(__name__)
 
@@ -77,20 +81,52 @@ def images(nom):
     return send_from_directory(IMAGES, nom)
 
 
+@app.route("/reference/<sid>.jpg")
+def image_reference(sid):
+    img = REFERENCE.images.get(sid)
+    if img is None:
+        abort(404)
+    if img.shape[1] > 640:
+        img = cv2.resize(img, (640, int(640 * img.shape[0] / img.shape[1])))
+    return Response(_jpeg(img), mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 # ---- API -----------------------------------------------------------------
 @app.route("/api/etat")
 def etat():
     return jsonify({
         "demo": DEMO,
-        "modele": {"pret": DETECTEUR.pret, "nom": CFG["modele"], "erreur": DETECTEUR.erreur},
+        "modele": {"pret": DETECTEUR.pret, "nom": DETECTEUR.modele, "moteur": DETECTEUR.moteur,
+                   "erreur": DETECTEUR.erreur},
         "rgb": [s.etat() for s in RGB],
         "thermique": THERM.etat() if THERM else None,
+        "reference": REFERENCE.etat(),
     })
 
 
 @app.route("/api/config")
 def config():
-    return jsonify({k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")})
+    out = {k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")}
+    out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele,
+                        "prompts_vivant": DETECTEUR.prompts_vivant, "prompts_valeur": DETECTEUR.prompts_valeur}
+    return jsonify(out)
+
+
+@app.route("/api/reference", methods=["POST"])
+def capturer_reference():
+    if DEMO:
+        return jsonify({"erreur": "Pas de référence en mode démo"}), 400
+    if not DETECTEUR.pret:
+        return jsonify({"erreur": "Modèle pas encore chargé"}), 503
+    if not any(s.derniere() is not None for s in RGB):
+        return jsonify({"erreur": "Aucune image caméra disponible"}), 503
+    return jsonify(REFERENCE.capturer(RGB, DETECTEUR))
+
+
+@app.route("/api/reference", methods=["DELETE"])
+def effacer_reference():
+    REFERENCE.effacer()
+    return jsonify(REFERENCE.etat())
 
 
 @app.route("/api/essais")
@@ -109,7 +145,7 @@ def nouvel_essai():
             s.scene = d["verite"]
         time.sleep(0.3)
     try:
-        r = DETECTEUR.analyser(RGB, THERM, d["verite"])
+        r = DETECTEUR.analyser(RGB, THERM, d["verite"], reference=None if DEMO else REFERENCE)
     except RuntimeError as e:
         return jsonify({"erreur": str(e)}), 503
     finally:
@@ -127,7 +163,8 @@ def nouvel_essai():
     ligne = {k: v for k, v in r.items() if k not in ("images_rgb", "image_thermique")}
     ligne.update({"id": eid, "horodatage": datetime.now().isoformat(timespec="seconds"),
                   "scenario": d["scenario"], "variante": d.get("variante", ""),
-                  "verite": d["verite"], "commentaire": d.get("commentaire", "")})
+                  "verite": d["verite"], "commentaire": d.get("commentaire", ""),
+                  "moteur": DETECTEUR.moteur})
     JOURNAL.ajouter(ligne)
     return jsonify(next(l for l in JOURNAL.lire() if l["id"] == eid))
 
