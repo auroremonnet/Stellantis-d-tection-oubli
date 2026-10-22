@@ -22,7 +22,7 @@
 
   "alertes": {
     "actif": true,
-    "topic": "care-stellantis-g2-CHANGEMOI",
+    "topic": "stellantis-g2-8f3k2",
     "classes_surveillees": ["sac à dos", "sac à main", "valise", "ordinateur", "téléphone"],
     "ratio_confirmation": 0.5,
     "cooldown_s": 60
