@@ -39,13 +39,13 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 
 ## Alertes téléphone
 
-Le banc envoie une notification push (via [ntfy.sh](https://ntfy.sh), gratuit et sans compte) quand un objet de valeur est détecté alors que plus personne n'est dans l'habitacle depuis `delai_absence_s` secondes. La notification contient le nom de l'objet, l'heure et l'image annotée.
+À la fin de chaque analyse, le banc envoie une notification push (via [ntfy.sh](https://ntfy.sh), gratuit et sans compte) si aucune personne n'a été vue sur l'ensemble des frames et qu'un objet de valeur apparaît dans une part suffisante d'entre elles. Une seule notification par essai : elle liste tous les objets oubliés, avec l'heure et l'image annotée de la détection la plus sûre.
 
 1. Installer l'appli **ntfy** (Android / iOS).
 2. Dans l'appli, s'abonner au topic de `config.json` (`alertes.topic`). **Changer la valeur par défaut** pour un nom unique au groupe : le topic fait office de mot de passe.
 3. Tester la réception sans lancer la caméra : `python test_alerte.py`.
 
-Réglages dans `config.json`, section `alertes` : `actif` (interrupteur général), `classes_surveillees`, `delai_absence_s` (personne partie depuis, défaut 10 s), `delai_confirmation_s` (objet vu en continu pendant, défaut 3 s), `cooldown_s` (délai mini entre deux alertes pour le même objet, défaut 60 s). Les alertes ne sont actives qu'en mode réel (pas en `--demo`), et uniquement pendant une analyse (YOLO ne tourne que là).
+Réglages dans `config.json`, section `alertes` : `actif` (interrupteur général), `classes_surveillees`, `ratio_confirmation` (part minimale des frames de l'essai où l'objet doit être vu, défaut 0.5 — anti-fausse alerte), `cooldown_s` (délai mini entre deux alertes pour le même objet, d'un essai à l'autre, défaut 60 s). Les alertes ne sont actives qu'en mode réel (pas en `--demo`), et uniquement pendant une analyse (YOLO ne tourne que là).
 
 ## Données
 

@@ -1,10 +1,12 @@
 """Alertes téléphone via ntfy.sh : objet de valeur détecté alors que personne n'est là.
 
-L'Alerteur reçoit chaque frame analysée par le détecteur (voir Detecteur.analyser)
-et décide seul d'alerter :
-  - l'objet doit être vu en continu pendant `delai_confirmation_s` (anti-fausse alerte) ;
-  - aucune personne vue depuis `delai_absence_s` (le conducteur est parti) ;
-  - au plus une alerte par objet toutes les `cooldown_s` secondes (anti-spam).
+L'Alerteur travaille au rythme des essais : pendant Detecteur.analyser il accumule,
+frame par frame, les objets surveillés vus (et garde la meilleure image annotée par
+objet), puis conclure_essai() décide :
+  - alerte seulement si aucune personne n'a été vue sur tout l'essai (toutes caméras) ;
+  - un objet est retenu s'il est vu dans au moins `ratio_confirmation` des frames ;
+  - au plus une notification par essai, listant tous les objets oubliés ;
+  - cooldown par objet de `cooldown_s` secondes entre deux essais (anti-spam).
 L'envoi part dans un thread et une erreur réseau se limite à un print.
 """
 import threading
@@ -17,13 +19,13 @@ import requests
 from care.detecteur import VALEUR
 
 PERSONNE = 0  # id COCO de « person »
+FEMININS = {"valise"}
 
 DEFAUTS = {
     "actif": True,
     "topic": "care-stellantis-g2-CHANGEMOI",
     "classes_surveillees": sorted(VALEUR.values()),
-    "delai_absence_s": 10,
-    "delai_confirmation_s": 3,
+    "ratio_confirmation": 0.5,
     "cooldown_s": 60,
 }
 
@@ -34,38 +36,59 @@ class Alerteur:
         self.actif = cfg["actif"]
         self.topic = cfg["topic"]
         self.surveillees = {c for c, nom in VALEUR.items() if nom in set(cfg["classes_surveillees"])}
-        self.delai_absence = cfg["delai_absence_s"]
-        self.delai_confirmation = cfg["delai_confirmation_s"]
+        self.ratio_confirmation = cfg["ratio_confirmation"]
         self.cooldown = cfg["cooldown_s"]
-        t = time.time()
-        self._derniere_personne = t  # au démarrage, on suppose quelqu'un présent
-        self._premiere_vue = {}      # id classe -> début de détection continue
-        self._derniere_alerte = {}   # id classe -> dernière alerte envoyée
+        self._derniere_alerte = {}  # id classe -> dernière alerte envoyée (persiste entre essais)
+        self._reinitialiser()
+
+    def _reinitialiser(self):
+        self._frames = 0        # itérations de l'essai en cours
+        self._personne = False  # une personne vue sur au moins une frame ?
+        self._compte = {}       # id classe -> nb d'itérations où l'objet est vu
+        self._meilleure = {}    # id classe -> (confiance max, image annotée)
 
     def traiter(self, vus, images):
-        """À appeler à chaque frame : vus = liste d'ensembles d'ids COCO (un par
-        caméra), images = images annotées correspondantes."""
+        """À appeler à chaque frame de l'essai : vus = liste de {id COCO: confiance max}
+        (un dict par caméra), images = images annotées correspondantes."""
         if not self.actif:
             return
+        self._frames += 1
+        if any(PERSONNE in v for v in vus):
+            self._personne = True
+        for c in self.surveillees:
+            confs = [(v[c], img) for v, img in zip(vus, images) if c in v]
+            if confs:
+                self._compte[c] = self._compte.get(c, 0) + 1
+                conf, img = max(confs, key=lambda t: t[0])
+                if conf > self._meilleure.get(c, (0.0, None))[0]:
+                    self._meilleure[c] = (conf, img)
+
+    def conclure_essai(self):
+        """À la fin de l'essai : au plus une notification, listant tous les objets oubliés."""
+        if not self.actif or not self._frames:
+            return
         now = time.time()
-        tous = set().union(*vus) if vus else set()
-        if PERSONNE in tous:
-            self._derniere_personne = now
-        for c in list(self._premiere_vue):
-            if c not in tous:  # détection interrompue : on repart de zéro
-                del self._premiere_vue[c]
-        for c in tous & self.surveillees:
-            self._premiere_vue.setdefault(c, now)
-            if (now - self._derniere_personne < self.delai_absence
-                    or now - self._premiere_vue[c] < self.delai_confirmation
-                    or now - self._derniere_alerte.get(c, 0) < self.cooldown):
-                continue
-            self._derniere_alerte[c] = now
-            img = next((im for v, im in zip(vus, images) if c in v), None)
-            nom = VALEUR[c]
-            message = f"{nom[0].upper()}{nom[1:]} oublié{'e' if nom == 'valise' else ''} dans le véhicule à {datetime.now():%H:%M:%S}"
+        oublies = []
+        if not self._personne:
+            oublies = sorted(
+                c for c, k in self._compte.items()
+                if k / self._frames >= self.ratio_confirmation
+                and now - self._derniere_alerte.get(c, 0) >= self.cooldown)
+        if oublies:
+            for c in oublies:
+                self._derniere_alerte[c] = now
+            noms = [VALEUR[c] for c in oublies]
+            liste = " et ".join([", ".join(noms[:-1]), noms[-1]] if len(noms) > 1 else noms)
+            if len(noms) > 1:
+                accord = "oubliés"
+            else:
+                accord = "oubliée" if noms[0] in FEMININS else "oublié"
+            message = (f"{liste[0].upper()}{liste[1:]} {accord} dans le véhicule"
+                       f" à {datetime.now():%H:%M:%S}")
+            img = max((self._meilleure[c] for c in oublies), key=lambda t: t[0])[1]
             threading.Thread(target=self.envoyer, args=("CARE · Objet oublié", message, img),
                              daemon=True).start()
+        self._reinitialiser()
 
     def envoyer(self, titre, message, image=None):
         """Envoi synchrone vers ntfy.sh ; renvoie True si la notification est partie.

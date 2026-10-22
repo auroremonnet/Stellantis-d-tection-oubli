@@ -43,7 +43,12 @@ class Detecteur:
 
     def _inferer(self, frames):
         res = self.model(frames, classes=CLASSES, conf=self.cfg["confiance_min"], verbose=False)
-        vus = [{int(c) for c in r.boxes.cls.tolist()} for r in res]
+        vus = []  # un dict {classe: confiance max} par frame ; itéré comme un ensemble ailleurs
+        for r in res:
+            d = {}
+            for c, f in zip(r.boxes.cls.tolist(), r.boxes.conf.tolist()):
+                d[int(c)] = max(d.get(int(c), 0.0), float(f))
+            vus.append(d)
         return vus, [r.plot() for r in res]
 
     def analyser(self, rgb, thermique, verite=None):
@@ -80,6 +85,8 @@ class Detecteur:
                         if m["tmax"] is not None:
                             tmax = max(tmax or -999, m["tmax"])
                 time.sleep(0.05)
+            if self.alerteur is not None:
+                self.alerteur.conclure_essai()
             if thermique is not None:
                 img_th = thermique.apercu()
 

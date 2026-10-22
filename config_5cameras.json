@@ -24,8 +24,7 @@
     "actif": true,
     "topic": "care-stellantis-g2-CHANGEMOI",
     "classes_surveillees": ["sac à dos", "sac à main", "valise", "ordinateur", "téléphone"],
-    "delai_absence_s": 10,
-    "delai_confirmation_s": 3,
+    "ratio_confirmation": 0.5,
     "cooldown_s": 60
   },
 
