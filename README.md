@@ -37,6 +37,15 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 1. Faire un essai à vide, puis un essai avec la poupée chauffée.
 2. Régler ensuite dans `config.json` le seuil (`seuil_celsius` en radiométrique, `seuil_8bit` sinon) et `pixels_chauds_min`.
 
+## Ajouter le microphone (optionnel)
+
+1. Installer les dépendances audio avec `python -m pip install -r requirements-audio.txt`.
+2. Brancher un microphone sur **l'ordinateur qui exécute `app.py`**. Lancer `python lister_micros.py` pour connaître son index, ou laisser `index` à `null` pour le micro par défaut.
+3. L'audio est déjà activé dans `config.json`. Relancer l'application. Au premier démarrage, le modèle AST est téléchargé et mis en cache ; une connexion Internet est nécessaire.
+4. Le micro reste en écoute **en continu** tant que l'application tourne. L'IHM montre le micro choisi, le niveau du signal reçu, les trois meilleures hypothèses parmi toutes les classes AudioSet du modèle, et les scores CARE « pleurs », « aboiement » et « miaulement ». `audio.duree_s` est la longueur de la fenêtre analysée ; `audio.intervalle_s` est le délai minimal entre deux analyses. La meilleure catégorie générale et les sons CARE détectés pendant un essai sont aussi inscrits dans le CSV. Les fichiers sonores ne sont pas conservés.
+
+Les scores sont des sorties du modèle, **pas des probabilités de présence calibrées**. `audio.seuil_general` règle l'affichage de « son probable » ; en dessous, l'IHM indique « son non identifié » tout en montrant les hypothèses. `audio.top_k` règle leur nombre. Ces paramètres n'améliorent pas la précision du modèle. Régler les seuils avec des essais positifs et négatifs dans l'habitacle. Une absence de son ciblé ne prouve pas l'absence d'enfant ou d'animal. L'audio n'entre pas encore dans les verdicts A1/A2 : ceux-ci restent comparables aux essais antérieurs. Le mode démo simule la vidéo, mais utilise le vrai micro.
+
 ## Données
 
 - `data/essais/essais.csv` : un essai par ligne, s'ouvre directement dans Excel (bouton **Exporter CSV**).
@@ -51,6 +60,7 @@ config.json          caméras, seuils, scénarios, variantes
 lister_cameras.py    trouver les index des caméras
 care/cameras.py      acquisition (1 thread par caméra) + sources démo
 care/detecteur.py    YOLO, seuil thermique, fusion
+care/audio.py        reconnaissance générale AudioSet et sons CARE ciblés
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
 templates/, static/  dashboard
 ```

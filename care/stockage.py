@@ -2,10 +2,12 @@
 import csv
 import os
 import threading
+import tempfile
 
 COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", "vivant_thermique",
             "classes_vivant", "objets", "cameras_vivant", "pixels_chauds", "tmax", "latence_s",
-            "commentaire"]
+             "commentaire", "audio_statut", "sons_audio", "pleurs_score", "aboiement_score",
+             "miaulement_score", "son_general", "score_general", "erreur_audio"]
 
 
 def _bool(v):
@@ -20,6 +22,30 @@ class Journal:
         if not os.path.exists(chemin):
             with open(chemin, "w", newline="", encoding="utf-8-sig") as fh:
                 csv.writer(fh, delimiter=";").writerow(COLONNES)
+        else:
+            self._migrer_colonnes()
+        with open(self.chemin, newline="", encoding="utf-8-sig") as fh:
+            self.colonnes = next(csv.reader(fh, delimiter=";"))
+
+    def _migrer_colonnes(self):
+        """Ajoute les champs audio aux anciens journaux sans perdre leurs lignes."""
+        with open(self.chemin, newline="", encoding="utf-8-sig") as fh:
+            lecteur = csv.DictReader(fh, delimiter=";")
+            anciennes = lecteur.fieldnames or []
+            if all(c in anciennes for c in COLONNES):
+                return
+            lignes = list(lecteur)
+        colonnes = list(dict.fromkeys(anciennes + COLONNES))
+        fd, temporaire = tempfile.mkstemp(dir=os.path.dirname(self.chemin), suffix=".csv")
+        try:
+            with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as fh:
+                writer = csv.DictWriter(fh, fieldnames=colonnes, delimiter=";")
+                writer.writeheader()
+                writer.writerows(lignes)
+            os.replace(temporaire, self.chemin)
+        finally:
+            if os.path.exists(temporaire):
+                os.remove(temporaire)
 
     def lire(self):
         with self._lock, open(self.chemin, encoding="utf-8-sig") as fh:
@@ -32,24 +58,26 @@ class Journal:
 
     def ajouter(self, ligne):
         with self._lock, open(self.chemin, "a", newline="", encoding="utf-8-sig") as fh:
-            row = {k: ligne.get(k, "") for k in COLONNES}
+            row = {k: ligne.get(k, "") for k in self.colonnes}
             for k in ("vivant_rgb", "vivant_thermique"):
                 row[k] = "" if row[k] in ("", None) else int(bool(row[k]))
-            for k in ("classes_vivant", "objets", "cameras_vivant"):
+            for k in ("classes_vivant", "objets", "cameras_vivant", "sons_audio"):
                 if isinstance(row[k], list):
                     row[k] = ", ".join(row[k])
             if row["pixels_chauds"] is None:
                 row["pixels_chauds"] = ""
             if row["tmax"] is None:
                 row["tmax"] = ""
-            csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";").writerow(row)
+            if row["score_general"] is None:
+                row["score_general"] = ""
+            csv.DictWriter(fh, fieldnames=self.colonnes, delimiter=";").writerow(row)
 
     def supprimer(self, eid):
         with self._lock:
             with open(self.chemin, encoding="utf-8-sig") as fh:
                 lignes = [l for l in csv.DictReader(fh, delimiter=";") if l["id"] != eid]
             with open(self.chemin, "w", newline="", encoding="utf-8-sig") as fh:
-                w = csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";")
+                w = csv.DictWriter(fh, fieldnames=self.colonnes, delimiter=";")
                 w.writeheader()
                 w.writerows(lignes)
 

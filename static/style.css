@@ -77,6 +77,20 @@ main > *, .side > * { min-width: 0; }
 .thermal-info dl { display: grid; grid-template-columns: repeat(3, auto); gap: 6px 24px; justify-content: start; margin: 10px 0; }
 .thermal-info dt { font-size: 12px; color: var(--muted); }
 .thermal-info dd { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.audio-live { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.audio-live p { margin: 8px 0; font-weight: 600; }
+.audio-scores { display: grid; gap: 6px; max-width: 480px; }
+.audio-scores > div { display: grid; grid-template-columns: 100px 1fr 42px; gap: 10px; align-items: center; }
+.audio-scores progress { width: 100%; accent-color: var(--a2); }
+.audio-scores b { text-align: right; font-variant-numeric: tabular-nums; }
+.audio-level { display: grid; grid-template-columns: 100px 1fr 70px; gap: 10px; align-items: center; max-width: 508px; margin: 8px 0 12px; }
+.audio-level progress { width: 100%; accent-color: var(--good); }
+.audio-level b { text-align: right; font-variant-numeric: tabular-nums; }
+.audio-live h4 { margin: 10px 0 5px; font-size: 13px; }
+.audio-general { margin: 10px 0 14px; padding: 10px 12px; border-radius: 8px; background: var(--brand-soft); }
+.audio-general > p { margin: 4px 0; }
+.audio-general ol { margin: 8px 0; padding-left: 22px; }
+.audio-general li { margin: 3px 0; }
 
 /* ---- Formulaire ---- */
 form label, fieldset { display: grid; gap: 6px; margin: 0 0 12px; font-weight: 500; font-size: 13px; }

@@ -20,6 +20,7 @@
     <span id="st-modele" class="pill"><i></i>Modèle</span>
     <span id="st-rgb" class="pill"><i></i>Caméras</span>
     <span id="st-th" class="pill"><i></i>Thermique</span>
+    <span id="st-audio" class="pill"><i></i>Micro</span>
     <a class="btn btn-ghost" href="/api/export">Exporter CSV</a>
   </div>
 </header>
@@ -50,6 +51,24 @@
             <code>config.json</code> avec un essai à vide puis un essai avec la poupée chauffée.</p>
         </div>
       </div>
+      <section class="audio-live" aria-live="polite">
+        <h3>Écoute du microphone</h3>
+        <p id="audio-message" class="muted">Chargement…</p>
+        <p id="audio-micro" class="muted small"></p>
+        <div class="audio-level"><span>Signal reçu</span><progress id="audio-niveau" max="1" value="0"></progress><b id="audio-niveau-val">—</b></div>
+        <div class="audio-general">
+          <h4>Nature du son</h4>
+          <p id="audio-general" class="muted">En attente…</p>
+          <ol id="audio-top"></ol>
+          <p class="muted small">Meilleures hypothèses AudioSet (libellés en anglais). Les scores ne sont pas des probabilités calibrées.</p>
+        </div>
+        <h4>Détection CARE</h4>
+        <div class="audio-scores">
+          <div><span>Pleurs</span><progress id="audio-pleurs" max="1" value="0"></progress><b id="audio-pleurs-val">—</b></div>
+          <div><span>Aboiement</span><progress id="audio-aboiement" max="1" value="0"></progress><b id="audio-aboiement-val">—</b></div>
+          <div><span>Miaulement</span><progress id="audio-miaulement" max="1" value="0"></progress><b id="audio-miaulement-val">—</b></div>
+        </div>
+      </section>
     </div>
 
     <div class="side">
@@ -111,7 +130,7 @@
       <table id="table">
         <thead><tr>
           <th>Heure</th><th>Scénario</th><th>Variante</th><th>Vérité</th>
-          <th>RGB</th><th>Thermique</th><th>A1</th><th>A2</th><th>Objets</th>
+          <th>RGB</th><th>Thermique</th><th>Audio</th><th>A1</th><th>A2</th><th>Objets</th>
           <th class="num">Latence</th><th>Images</th><th></th>
         </tr></thead>
         <tbody></tbody>

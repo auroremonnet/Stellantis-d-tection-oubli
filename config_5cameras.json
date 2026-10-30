@@ -19,6 +19,7 @@
     "seuil_8bit": 200,
     "pixels_chauds_min": 20
   },
+  "audio": {"active": true, "index": null, "duree_s": 3, "intervalle_s": 1, "maintien_s": 4, "seuil": 0.5, "seuil_general": 0.3, "top_k": 3},
 
   "scenarios": [
     {"code": "S1", "nom": "Enfant (poupée chauffée) dans siège auto arrière", "verite": "vivant"},

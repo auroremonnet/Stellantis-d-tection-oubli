@@ -17,6 +17,7 @@ import cv2
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file, send_from_directory
 
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
+from care.audio import DetecteurAudio
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.stockage import Journal, metriques
 
@@ -44,6 +45,7 @@ cth = CFG["camera_thermique"]
 THERM = ClsTh(cth["id"], cth["index"], cth["label"], CFG["thermique"]).demarrer() if cth.get("active") else None
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
+AUDIO = DetecteurAudio(CFG.get("audio", {}))
 
 app = Flask(__name__)
 
@@ -85,6 +87,7 @@ def etat():
         "modele": {"pret": DETECTEUR.pret, "nom": CFG["modele"], "erreur": DETECTEUR.erreur},
         "rgb": [s.etat() for s in RGB],
         "thermique": THERM.etat() if THERM else None,
+        "audio": AUDIO.etat(),
     })
 
 
@@ -108,8 +111,10 @@ def nouvel_essai():
         for s in SOURCES.values():
             s.scene = d["verite"]
         time.sleep(0.3)
+    debut_audio = time.monotonic()
     try:
         r = DETECTEUR.analyser(RGB, THERM, d["verite"])
+        r.update(AUDIO.instantane(depuis=debut_audio))
     except RuntimeError as e:
         return jsonify({"erreur": str(e)}), 503
     finally:

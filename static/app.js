@@ -39,6 +39,36 @@ function pill(el, etat, texte) {
   el.innerHTML = `<i></i>${texte}`;
 }
 
+function afficherAudio(au) {
+  const mesure = au.mesure;
+  const messages = {
+    desactive: "Désactivé dans config.json",
+    chargement: "Chargement du modèle ou connexion au micro…",
+    attente: "Écoute en cours, première analyse en attente…",
+    erreur: `Micro indisponible : ${mesure.erreur_audio}`,
+  };
+  $("#audio-message").textContent = mesure.audio_statut === "ok"
+    ? mesure.sons_audio.length ? `Son détecté récemment : ${mesure.sons_audio.join(", ")}` : "Écoute en cours · aucun son ciblé"
+    : messages[mesure.audio_statut] || "En attente";
+  $("#audio-micro").textContent = au.micro ? `Entrée : ${au.micro}` : "";
+  $("#audio-niveau").value = au.niveau_db == null ? 0 : Math.max(0, Math.min(1, (au.niveau_db + 60) / 60));
+  $("#audio-niveau-val").textContent = au.niveau_db == null ? "—" : `${au.niveau_db} dBFS`;
+  $("#audio-general").textContent = mesure.audio_statut === "ok"
+    ? mesure.son_general ? `Son probable : ${mesure.son_general}` : "Son non identifié avec assez de certitude"
+    : "En attente d'une analyse audio";
+  const top = $("#audio-top");
+  top.replaceChildren(...(mesure.top_sons || []).map((son) => {
+    const ligne = document.createElement("li");
+    ligne.textContent = `${son.label} · score ${Math.round(son.score * 100)} %`;
+    return ligne;
+  }));
+  for (const nom of ["pleurs", "aboiement", "miaulement"]) {
+    const score = mesure[`${nom}_score`];
+    $(`#audio-${nom}`).value = score ?? 0;
+    $(`#audio-${nom}-val`).textContent = score == null ? "—" : `${Math.round(score * 100)} %`;
+  }
+}
+
 async function rafraichirEtat() {
   try {
     const e = await (await fetch("/api/etat")).json();
@@ -64,6 +94,11 @@ async function rafraichirEtat() {
       $("#th-px").textContent = th.pixels_chauds ?? "—";
       $("#th-tmax").textContent = th.tmax == null ? "n/d" : th.tmax + " °C";
     }
+    const au = e.audio;
+    const audioOk = au.mesure.audio_statut === "ok";
+    pill($("#st-audio"), !au.active ? "" : au.erreur ? "ko" : audioOk ? "ok" : "wait",
+      !au.active ? "Micro désactivé" : au.erreur ? "Micro en erreur" : audioOk ? "Micro en écoute" : "Chargement audio…");
+    afficherAudio(au);
     $("#btn-lancer").dataset.pret = e.modele.pret ? "1" : "";
   } catch { /* serveur arrêté */ }
 }
@@ -138,6 +173,8 @@ function afficherResultat(e) {
       <dt>Scénario</dt><dd>${esc(e.scenario)} · ${esc(e.variante)} · vérité <b>${LABEL_VERITE[e.verite]}</b></dd>
       <dt>RGB</dt><dd>${e.vivant_rgb ? `<span class="yes">vivant</span> (${esc(e.classes_vivant)})` : '<span class="no">rien de vivant</span>'}</dd>
       <dt>Thermique</dt><dd>${th == null ? '<span class="no">non utilisée</span>' : th ? `<span class="yes">chaud</span> · ${e.pixels_chauds} px${e.tmax ? " · " + e.tmax + " °C" : ""}` : `<span class="no">rien</span> · ${e.pixels_chauds} px`}</dd>
+      <dt>Micro</dt><dd>${texteAudio(e)}${e.audio_statut === "ok" ? ` · pleurs ${esc(e.pleurs_score)}, aboiement ${esc(e.aboiement_score)}, miaulement ${esc(e.miaulement_score)}` : e.erreur_audio ? ` · ${esc(e.erreur_audio)}` : ""}</dd>
+      <dt>Nature du son</dt><dd>${e.son_general ? `${esc(e.son_general)} · score ${esc(e.score_general)}` : "non identifiée"}</dd>
       <dt>Objets</dt><dd>${esc(e.objets) || '<span class="no">aucun</span>'}</dd>
       <dt>Évaluation</dt><dd>A1 ${tag(e.A1)} &nbsp; A2 ${tag(e.A2)}</dd>
       <dt>Latence</dt><dd>${e.latence_s} s</dd>
@@ -149,6 +186,14 @@ function afficherResultat(e) {
 }
 
 const tag = (r) => (r ? `<span class="tag ${r}">${r}</span>` : '<span class="tag na">—</span>');
+
+function texteAudio(e) {
+  if (e.audio_statut !== "ok") {
+    const etats = { desactive: "désactivé", chargement: "modèle en chargement", attente: "aucune mesure", erreur: "indisponible" };
+    return esc(etats[e.audio_statut] || "non mesuré");
+  }
+  return esc(e.sons_audio || "aucun son ciblé");
+}
 
 // ---------------------------------------------------------------- données
 async function chargerEssais() {
@@ -238,7 +283,7 @@ function afficherGraphique(rows) {
 function afficherTable() {
   $("#nb-essais").textContent = `${ESSAIS.length} essai${ESSAIS.length > 1 ? "s" : ""}`;
   const tb = $("#table tbody");
-  if (!ESSAIS.length) { tb.innerHTML = `<tr><td colspan="12" class="muted">Aucun essai enregistré.</td></tr>`; return; }
+  if (!ESSAIS.length) { tb.innerHTML = `<tr><td colspan="13" class="muted">Aucun essai enregistré.</td></tr>`; return; }
   tb.innerHTML = ESSAIS.map((e) => `<tr>
     <td>${esc(e.horodatage.slice(11, 19))}<div class="muted small">${esc(e.horodatage.slice(0, 10))}</div></td>
     <td><b>${esc(e.scenario)}</b></td>
@@ -246,6 +291,7 @@ function afficherTable() {
     <td>${LABEL_VERITE[e.verite] || esc(e.verite)}</td>
     <td>${e.vivant_rgb ? '<span class="yes">vivant</span>' : '<span class="no">—</span>'}</td>
     <td>${e.vivant_thermique == null ? '<span class="no">n/a</span>' : e.vivant_thermique ? '<span class="yes">chaud</span>' : '<span class="no">—</span>'}</td>
+    <td>${texteAudio(e)}${e.son_general ? `<div class="muted small">${esc(e.son_general)}</div>` : ""}</td>
     <td>${tag(e.A1)}</td><td>${tag(e.A2)}</td>
     <td>${esc(e.objets) || '<span class="no">—</span>'}</td>
     <td class="num">${esc(e.latence_s)} s</td>
@@ -281,6 +327,6 @@ window.addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(ch
   construireCameras(e.rgb);
   construireFormulaire();
   await rafraichirEtat();
-  setInterval(rafraichirEtat, 2000);
+  setInterval(rafraichirEtat, 1000);
   await chargerEssais();
 })();
