@@ -1,110 +1,108 @@
-"""Alertes téléphone via ntfy.sh : objet de valeur détecté alors que personne n'est là.
+"""Alertes téléphone via ntfy.sh (gratuit, sans compte : le topic fait office de mot de passe).
 
-L'Alerteur travaille au rythme des essais : pendant Detecteur.analyser il accumule,
-frame par frame, les objets surveillés vus (et garde la meilleure image annotée par
-objet), puis conclure_essai() décide :
-  - alerte seulement si aucune personne n'a été vue sur tout l'essai (toutes caméras) ;
-  - un objet est retenu s'il est vu dans au moins `ratio_confirmation` des frames ;
-  - au plus une notification par essai, listant tous les objets oubliés ;
-  - cooldown par objet de `cooldown_s` secondes entre deux essais (anti-spam).
-L'envoi part dans un thread et une erreur réseau se limite à un print.
+Reçoit des `Alerte` déjà décidées (care/decision.py) et se charge de l'envoi :
+    - une notification par alerte, avec l'image annotée de l'analyse ;
+    - cooldown par objet (`cooldown_s`) : pas deux fois le même objet coup sur coup d'un
+      essai à l'autre. Jamais pour une alerte critique (enfant, animal) ; les rappels
+      d'escalade passent outre et la levée d'alerte remet le compteur à zéro ;
+    - priorité ntfy « urgent » pour le critique (sonne même en mode silencieux sur Android) ;
+    - l'envoi part dans un thread : une panne réseau ne bloque jamais le banc.
+
+Les libellés surveillés sont les libellés français du détecteur (« téléphone »,
+« portefeuille », « clés »…), indépendants du moteur (COCO, YOLOE ou modèle entraîné).
 """
+from __future__ import annotations
+
 import threading
 import time
-from datetime import datetime
 
 import cv2
 import requests
 
-from care.detecteur import VALEUR
-
-PERSONNE = 0  # id COCO de « person »
-FEMININS = {"valise"}
-
 DEFAUTS = {
     "actif": True,
     "topic": "care-stellantis-g2-CHANGEMOI",
-    "classes_surveillees": sorted(VALEUR.values()),
-    "ratio_confirmation": 0.5,
+    "serveur": "https://ntfy.sh",
+    "classes_surveillees": None,      # None = tous les objets de valeur du détecteur
+    "alerter_objet_inconnu": True,    # zone nouvelle non reconnue → alerte quand même
     "cooldown_s": 60,
+}
+MOTIFS = {
+    "alerte": "",
+    "rappel": "RAPPEL · ",
+    "acquittement": "Alerte levée · ",
 }
 
 
 class Alerteur:
-    def __init__(self, cfg=None):
+    def __init__(self, cfg: dict | None = None, envoi_synchrone: bool = False):
         cfg = {**DEFAUTS, **(cfg or {})}
-        self.actif = cfg["actif"]
+        self.actif = bool(cfg["actif"])
         self.topic = cfg["topic"]
-        self.surveillees = {c for c, nom in VALEUR.items() if nom in set(cfg["classes_surveillees"])}
-        self.ratio_confirmation = cfg["ratio_confirmation"]
-        self.cooldown = cfg["cooldown_s"]
-        self._derniere_alerte = {}  # id classe -> dernière alerte envoyée (persiste entre essais)
-        self._reinitialiser()
+        self.serveur = cfg["serveur"].rstrip("/")
+        cs = cfg["classes_surveillees"]
+        self.surveillees = None if cs is None else frozenset(cs)
+        self.alerter_inconnu = bool(cfg["alerter_objet_inconnu"])
+        self.cooldown = float(cfg["cooldown_s"])
+        self._synchrone = envoi_synchrone
+        self._derniere = {}           # élément -> horodatage du dernier envoi
+        self._lock = threading.Lock()
+        self.envois = 0               # compteur (affiché dans le dashboard)
+        self.derniere_erreur = ""
 
-    def _reinitialiser(self):
-        self._frames = 0        # itérations de l'essai en cours
-        self._personne = False  # une personne vue sur au moins une frame ?
-        self._compte = {}       # id classe -> nb d'itérations où l'objet est vu
-        self._meilleure = {}    # id classe -> (confiance max, image annotée)
-
-    def traiter(self, vus, images):
-        """À appeler à chaque frame de l'essai : vus = liste de {id COCO: confiance max}
-        (un dict par caméra), images = images annotées correspondantes."""
-        if not self.actif:
-            return
-        self._frames += 1
-        if any(PERSONNE in v for v in vus):
-            self._personne = True
-        for c in self.surveillees:
-            confs = [(v[c], img) for v, img in zip(vus, images) if c in v]
-            if confs:
-                self._compte[c] = self._compte.get(c, 0) + 1
-                conf, img = max(confs, key=lambda t: t[0])
-                if conf > self._meilleure.get(c, (0.0, None))[0]:
-                    self._meilleure[c] = (conf, img)
-
-    def conclure_essai(self):
-        """À la fin de l'essai : au plus une notification, listant tous les objets oubliés."""
-        if not self.actif or not self._frames:
-            return
+    def notifier(self, alerte, image=None, motif: str = "alerte") -> bool:
+        """Programme l'envoi de l'alerte ; renvoie False si rien n'est envoyé
+        (alertes coupées ou cooldown)."""
+        if not self.actif or alerte is None:
+            return False
         now = time.time()
-        oublies = []
-        if not self._personne:
-            oublies = sorted(
-                c for c, k in self._compte.items()
-                if k / self._frames >= self.ratio_confirmation
-                and now - self._derniere_alerte.get(c, 0) >= self.cooldown)
-        if oublies:
-            for c in oublies:
-                self._derniere_alerte[c] = now
-            noms = [VALEUR[c] for c in oublies]
-            liste = " et ".join([", ".join(noms[:-1]), noms[-1]] if len(noms) > 1 else noms)
-            if len(noms) > 1:
-                accord = "oubliés"
-            else:
-                accord = "oubliée" if noms[0] in FEMININS else "oublié"
-            message = (f"{liste[0].upper()}{liste[1:]} {accord} dans le véhicule"
-                       f" à {datetime.now():%H:%M:%S}")
-            img = max((self._meilleure[c] for c in oublies), key=lambda t: t[0])[1]
-            threading.Thread(target=self.envoyer, args=("CARE · Objet oublié", message, img),
-                             daemon=True).start()
-        self._reinitialiser()
+        with self._lock:
+            if motif == "acquittement":
+                # le conducteur est revenu : un nouvel oubli doit pouvoir réalerter tout de suite
+                for e in alerte.elements:
+                    self._derniere.pop(e, None)
+            elif motif == "alerte" and alerte.niveau != "critique":
+                # anti-spam pour les objets seulement : une présence vivante n'est JAMAIS filtrée
+                frais = [e for e in alerte.elements if now - self._derniere.get(e, 0) >= self.cooldown]
+                if not frais:
+                    return False
+            if motif != "acquittement":
+                for e in alerte.elements:
+                    self._derniere[e] = now
+        titre = MOTIFS.get(motif, "") + alerte.titre
+        if motif == "acquittement":
+            message, priorite, tags = "Le conducteur est revenu au véhicule.", "default", "white_check_mark"
+            image = None
+        else:
+            message, priorite, tags = alerte.message, alerte.priorite, alerte.tags
+        args = (titre, message, image, priorite, tags)
+        if self._synchrone:
+            return self.envoyer(*args)
+        threading.Thread(target=self.envoyer, args=args, daemon=True).start()
+        return True
 
-    def envoyer(self, titre, message, image=None):
-        """Envoi synchrone vers ntfy.sh ; renvoie True si la notification est partie.
+    def envoyer(self, titre, message, image=None, priorite="high",
+                tags="rotating_light,oncoming_automobile") -> bool:
+        """Envoi synchrone vers ntfy ; renvoie True si la notification est partie.
         Titre/message/priorité en query params (les headers HTTP cassent les accents)."""
         corps = b""
+        params = {"title": titre, "message": message, "priority": priorite, "tags": tags}
         if image is not None:
             ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ok:
                 corps = buf.tobytes()
+                params["filename"] = "detection.jpg"
         try:
-            r = requests.put(
-                f"https://ntfy.sh/{self.topic}", data=corps, timeout=10,
-                params={"title": titre, "message": message, "priority": "high",
-                        "tags": "rotating_light,oncoming_automobile", "filename": "detection.jpg"})
+            r = requests.put(f"{self.serveur}/{self.topic}", data=corps, params=params, timeout=10)
             r.raise_for_status()
+            self.envois += 1
+            self.derniere_erreur = ""
             return True
         except Exception as e:  # noqa: BLE001 — une panne réseau ne doit jamais arrêter le banc
+            self.derniere_erreur = str(e)
             print(f"[alertes] envoi ntfy impossible : {e}")
             return False
+
+    def etat(self) -> dict:
+        return {"actif": self.actif, "topic": self.topic, "envois": self.envois,
+                "erreur": self.derniere_erreur}

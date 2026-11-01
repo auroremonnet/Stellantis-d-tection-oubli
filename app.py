@@ -18,8 +18,11 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from care.alertes import Alerteur
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
+from care.decision import decider
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
+from care.reference import Reference
 from care.stockage import Journal, metriques
+from care.surveillance import Branchements, MachineOubli, Parametres, Superviseur
 
 RACINE = os.path.dirname(os.path.abspath(__file__))
 
@@ -31,12 +34,22 @@ ARGS = parser.parse_args()
 
 with open(os.path.join(RACINE, "config.json"), encoding="utf-8") as fh:
     CFG = json.load(fh)
+# Réglages propres au poste, hors dépôt (le dépôt est public) : config.local.json est
+# ignoré par git et fusionné section par section par-dessus config.json.
+_LOCAL = os.path.join(RACINE, "config.local.json")
+if os.path.exists(_LOCAL):
+    with open(_LOCAL, encoding="utf-8") as fh:
+        for _k, _v in json.load(fh).items():
+            CFG[_k] = {**CFG.get(_k, {}), **_v} if isinstance(_v, dict) else _v
 
 DEMO = ARGS.demo
 DATA = os.path.join(RACINE, "data", "demo" if DEMO else "essais")
 IMAGES = os.path.join(DATA, "images")
+BRUTES = os.path.join(DATA, "brutes")      # images sans annotation, pour enrichir le dataset
 os.makedirs(IMAGES, exist_ok=True)
 JOURNAL = Journal(os.path.join(DATA, "essais.csv"))
+EVENEMENTS = os.path.join(DATA, "evenements.jsonl")
+VERITES = ("vivant", "objet", "vide")
 
 # ---- Matériel ------------------------------------------------------------
 ClsRGB, ClsTh = (SourceDemo, SourceThermiqueDemo) if DEMO else (Source, SourceThermique)
@@ -44,8 +57,95 @@ RGB = [ClsRGB(c["id"], c["index"], c["label"], CFG["resolution"]).demarrer() for
 cth = CFG["camera_thermique"]
 THERM = ClsTh(cth["id"], cth["index"], cth["label"], CFG["thermique"]).demarrer() if cth.get("active") else None
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
-ALERTEUR = Alerteur(CFG.get("alertes"))
-DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG, alerteur=ALERTEUR)
+DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
+REF_PARAMS = {"iou_fixe": 0.5, "seuil_changement": 35, "aire_min": 1500, "part_max_image": 0.6, "zones_max": 6}
+REF_PARAMS.update(CFG.get("reference", {}))
+REFERENCE = Reference(os.path.join(DATA, "reference"), REF_PARAMS)
+
+CFG_ALERTES = dict(CFG.get("alertes", {}))
+if os.environ.get("CARE_NTFY_TOPIC"):  # le topic ntfy fait office de mot de passe
+    CFG_ALERTES["topic"] = os.environ["CARE_NTFY_TOPIC"]
+if DEMO and not CFG_ALERTES.get("en_demo", False):
+    CFG_ALERTES["actif"] = False  # pas de notification réelle en démo, sauf demande explicite
+ALERTEUR = Alerteur(CFG_ALERTES)
+
+
+# ---- Enregistrement commun (essai manuel et surveillance automatique) ----------
+def _capturer_brutes():
+    return {s.id: f for s in RGB if (f := s.derniere()) is not None}
+
+
+def _enregistrer(r, contexte, mode, brutes=None, niveau_alerte=None):
+    """Sauve les images et, si la vérité terrain est connue, ajoute la ligne au journal."""
+    eid = r.get("id") or datetime.now().strftime("%Y%m%d-%H%M%S")
+    m = mosaique(r.get("images_rgb") or [])
+    if m is not None:
+        cv2.imwrite(os.path.join(IMAGES, f"{eid}_rgb.jpg"), m)
+    if r.get("image_thermique") is not None:
+        cv2.imwrite(os.path.join(IMAGES, f"{eid}_th.jpg"), r["image_thermique"])
+    if brutes and CFG.get("sauver_images_brutes", True):
+        os.makedirs(BRUTES, exist_ok=True)
+        for sid, f in brutes.items():
+            cv2.imwrite(os.path.join(BRUTES, f"{eid}_{sid}.jpg"), f)
+    if contexte.get("verite") not in VERITES or not contexte.get("scenario"):
+        return eid, None  # surveillance « libre » : pas de vérité terrain, pas de ligne au journal
+    ligne = {k: v for k, v in r.items() if not k.startswith("image")}
+    ligne.update({"id": eid, "horodatage": datetime.now().isoformat(timespec="seconds"),
+                  "scenario": contexte["scenario"], "variante": contexte.get("variante", ""),
+                  "verite": contexte["verite"], "commentaire": contexte.get("commentaire", ""),
+                  "moteur": DETECTEUR.moteur, "mode": mode,
+                  "alerte": niveau_alerte or ""})
+    JOURNAL.ajouter(ligne)
+    return eid, next((l for l in JOURNAL.lire() if l["id"] == eid), None)
+
+
+def _journaliser_evenement(evt):
+    with open(EVENEMENTS, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({**evt.en_dict(), "source": "surveillance"}, ensure_ascii=False) + "\n")
+
+
+# ---- Surveillance automatique (simulation de l'oubli de bout en bout) ----------
+def _analyser_surveillance(contexte):
+    brutes = _capturer_brutes()
+    r = DETECTEUR.analyser(RGB, THERM, contexte.get("verite"), reference=None if DEMO else REFERENCE)
+    r["id"] = datetime.now().strftime("%Y%m%d-%H%M%S")
+    r["_brutes"] = brutes
+    return r
+
+
+def _enregistrer_surveillance(r, contexte):
+    # lecture seule : `r` est aussi le dernier résultat lu par /api/surveillance
+    alerte = r.get("alerte") or {}
+    _enregistrer(r, contexte, "auto", r.get("_brutes"), alerte.get("niveau"))
+
+
+def _demo_scene(scene):
+    for s in SOURCES.values():
+        if hasattr(s, "scene"):
+            s.scene = scene
+
+
+# Caméras qui voient le conducteur : elles seules décident « adulte à bord / parti ».
+# Un enfant proche d'une caméra arrière ne peut ainsi ni retenir la surveillance en
+# « Occupé », ni lever une alerte critique en se faisant passer pour le conducteur qui revient.
+_CAMS_CONDUCTEUR = set(CFG.get("surveillance", {}).get("cameras_conducteur") or [])
+RGB_CONDUCTEUR = [s for s in RGB if s.id in _CAMS_CONDUCTEUR] or RGB
+
+SUPERVISEUR = Superviseur(
+    MachineOubli(Parametres.depuis_config(CFG.get("surveillance"))),
+    Branchements(
+        presence_adulte=lambda: DETECTEUR.presence_adulte(RGB_CONDUCTEUR),
+        analyser=_analyser_surveillance,
+        decider=lambda r: decider(r, habitacle_vide_attendu=True,
+                                  objets_surveilles=ALERTEUR.surveillees,
+                                  alerter_inconnu=ALERTEUR.alerter_inconnu),
+        notifier=lambda alerte, r, motif: ALERTEUR.notifier(
+            alerte, mosaique(r.get("images_rgb") or []), motif),
+        enregistrer=_enregistrer_surveillance,
+        journaliser=_journaliser_evenement,
+    ),
+    periode_s=float(CFG.get("surveillance", {}).get("periode_s", 0.5)),
+)
 
 app = Flask(__name__)
 
@@ -79,20 +179,56 @@ def images(nom):
     return send_from_directory(IMAGES, nom)
 
 
+@app.route("/reference/<sid>.jpg")
+def image_reference(sid):
+    img = REFERENCE.images.get(sid)
+    if img is None:
+        abort(404)
+    if img.shape[1] > 640:
+        img = cv2.resize(img, (640, int(640 * img.shape[0] / img.shape[1])))
+    return Response(_jpeg(img), mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 # ---- API -----------------------------------------------------------------
 @app.route("/api/etat")
 def etat():
     return jsonify({
         "demo": DEMO,
-        "modele": {"pret": DETECTEUR.pret, "nom": CFG["modele"], "erreur": DETECTEUR.erreur},
+        "modele": {"pret": DETECTEUR.pret, "nom": DETECTEUR.modele, "moteur": DETECTEUR.moteur,
+                   "erreur": DETECTEUR.erreur, "avertissement": DETECTEUR.avertissement,
+                   "custom": DETECTEUR.custom is not None},
+        "alertes": ALERTEUR.etat(),
         "rgb": [s.etat() for s in RGB],
         "thermique": THERM.etat() if THERM else None,
+        "reference": REFERENCE.etat(),
     })
 
 
 @app.route("/api/config")
 def config():
-    return jsonify({k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")})
+    out = {k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")}
+    out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele,
+                        "prompts_vivant": DETECTEUR.prompts_vivant, "prompts_valeur": DETECTEUR.prompts_valeur}
+    return jsonify(out)
+
+
+@app.route("/api/reference", methods=["POST"])
+def capturer_reference():
+    if SUPERVISEUR.actif:
+        return jsonify({"erreur": "Surveillance automatique en cours : la référence est capturée à l'armement"}), 409
+    if DEMO:
+        return jsonify({"erreur": "Pas de référence en mode démo"}), 400
+    if not DETECTEUR.pret:
+        return jsonify({"erreur": "Modèle pas encore chargé"}), 503
+    if not any(s.derniere() is not None for s in RGB):
+        return jsonify({"erreur": "Aucune image caméra disponible"}), 503
+    return jsonify(REFERENCE.capturer(RGB, DETECTEUR))
+
+
+@app.route("/api/reference", methods=["DELETE"])
+def effacer_reference():
+    REFERENCE.effacer()
+    return jsonify(REFERENCE.etat())
 
 
 @app.route("/api/essais")
@@ -106,32 +242,77 @@ def nouvel_essai():
     d = request.get_json(force=True)
     if d.get("verite") not in ("vivant", "objet", "vide") or not d.get("scenario"):
         return jsonify({"erreur": "Scénario et vérité terrain obligatoires"}), 400
+    if SUPERVISEUR.actif:
+        return jsonify({"erreur": "Surveillance automatique en cours : la désarmer d'abord"}), 409
     if DEMO:  # la scène simulée suit la vérité terrain déclarée
-        for s in SOURCES.values():
-            s.scene = d["verite"]
+        _demo_scene(d["verite"])
         time.sleep(0.3)
+    brutes = _capturer_brutes()
     try:
-        r = DETECTEUR.analyser(RGB, THERM, d["verite"])
+        r = DETECTEUR.analyser(RGB, THERM, d["verite"], reference=None if DEMO else REFERENCE)
     except RuntimeError as e:
         return jsonify({"erreur": str(e)}), 503
     finally:
         if DEMO:
-            for s in SOURCES.values():
-                s.scene = "vide"
+            _demo_scene("vide")
 
-    eid = datetime.now().strftime("%Y%m%d-%H%M%S")
-    m = mosaique(r["images_rgb"])
-    if m is not None:
-        cv2.imwrite(os.path.join(IMAGES, f"{eid}_rgb.jpg"), m)
-    if r["image_thermique"] is not None:
-        cv2.imwrite(os.path.join(IMAGES, f"{eid}_th.jpg"), r["image_thermique"])
+    # Essai manuel : règle d'origine des alertes (un adulte présent annule l'alerte objet)
+    alerte = decider(r, habitacle_vide_attendu=False, objets_surveilles=ALERTEUR.surveillees,
+                     alerter_inconnu=ALERTEUR.alerter_inconnu)
+    if alerte is not None:
+        ALERTEUR.notifier(alerte, mosaique(r["images_rgb"]))
+    _eid, ligne = _enregistrer(r, d, "manuel", brutes, alerte and alerte.niveau)
+    return jsonify(ligne)
 
-    ligne = {k: v for k, v in r.items() if k not in ("images_rgb", "image_thermique")}
-    ligne.update({"id": eid, "horodatage": datetime.now().isoformat(timespec="seconds"),
-                  "scenario": d["scenario"], "variante": d.get("variante", ""),
-                  "verite": d["verite"], "commentaire": d.get("commentaire", "")})
-    JOURNAL.ajouter(ligne)
-    return jsonify(next(l for l in JOURNAL.lire() if l["id"] == eid))
+
+# ---- API surveillance automatique -----------------------------------------
+@app.route("/api/surveillance")
+def surveillance_etat():
+    return jsonify(SUPERVISEUR.instantane())
+
+
+@app.route("/api/surveillance/armer", methods=["POST"])
+def surveillance_armer():
+    d = request.get_json(silent=True) or {}
+    if d.get("verite") and d["verite"] not in VERITES:
+        return jsonify({"erreur": f"Vérité terrain inconnue : {d['verite']}"}), 400
+    if not DETECTEUR.pret:
+        return jsonify({"erreur": "Modèle pas encore chargé"}), 503
+    if not DEMO and d.get("capturer_reference", True):
+        if not any(s.derniere() is not None for s in RGB):
+            return jsonify({"erreur": "Aucune image caméra disponible"}), 503
+        REFERENCE.capturer(RGB, DETECTEUR)  # habitacle vide au moment d'armer
+    if DEMO:
+        _demo_scene("vide")
+    contexte = {k: d.get(k, "") for k in ("scenario", "variante", "verite", "commentaire")}
+    SUPERVISEUR.armer(contexte)
+    return jsonify(SUPERVISEUR.instantane())
+
+
+@app.route("/api/surveillance/desarmer", methods=["POST"])
+def surveillance_desarmer():
+    SUPERVISEUR.desarmer()
+    if DEMO:
+        _demo_scene("vide")
+    return jsonify(SUPERVISEUR.instantane())
+
+
+@app.route("/api/surveillance/verrouiller", methods=["POST"])
+def surveillance_verrouiller():
+    SUPERVISEUR.verrouiller()
+    return jsonify(SUPERVISEUR.instantane())
+
+
+@app.route("/api/surveillance/demo", methods=["POST"])
+def surveillance_demo():
+    """Mode démo uniquement : le conducteur monte (True) ou descend (False). En descendant,
+    il laisse dans l'habitacle ce que prévoit la vérité terrain du scénario armé."""
+    if not DEMO:
+        abort(404)
+    occupant = bool((request.get_json(silent=True) or {}).get("occupant"))
+    verite = SUPERVISEUR.contexte.get("verite") or "vide"
+    _demo_scene("conducteur" if occupant else verite)
+    return jsonify(SUPERVISEUR.instantane())
 
 
 @app.route("/api/essais/<eid>", methods=["DELETE"])
