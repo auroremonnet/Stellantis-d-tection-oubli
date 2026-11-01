@@ -148,9 +148,10 @@ class MachineOubli:
         if self.etat is not Etat.ALERTE:
             return []
         self._reinit_alerte()
-        self._noter("acquittement", "pris en charge à distance")
         self._c = _Chrono()
-        self._aller(Etat.VEILLE, "alerte acquittée à distance")
+        # un seul événement, de type « acquittement » : le retour du conducteur n'en écrit
+        # qu'un lui aussi (« occupe »), et deux lignes au même horodatage ne disent rien de plus
+        self._aller(Etat.VEILLE, "pris en charge à distance", type_="acquittement")
         return [Action.ACQUITTER]
 
     # ---- observations ------------------------------------------------------
@@ -232,10 +233,12 @@ class MachineOubli:
     def _reinit_alerte(self) -> None:
         self.niveau_alerte, self._t_alerte, self.rappels = None, None, 0
 
-    def _aller(self, etat: Etat, detail: str) -> None:
+    def _aller(self, etat: Etat, detail: str, type_: str | None = None) -> None:
+        """`type_` nomme l'événement autrement que l'état atteint : l'acquittement ramène en
+        veille, mais c'est « acquittement » qui a du sens dans le journal."""
         self.etat = etat
         self._depuis = self._h()
-        self._noter(etat.value, detail)
+        self._noter(type_ or etat.value, detail)
 
     def _noter(self, type_: str, detail: str) -> None:
         self.historique.append(Evenement(self._mur(), type_, detail))

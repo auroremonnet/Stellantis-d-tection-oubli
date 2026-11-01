@@ -168,4 +168,4 @@ class Alerteur:
 
     def etat(self) -> dict:
         return {"actif": self.actif, "topic": self.topic, "envois": self.envois,
-                "erreur": self.derniere_erreur}
+                "erreur": self.derniere_erreur, "suivi": self.lien_suivi}

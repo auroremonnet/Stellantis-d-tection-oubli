@@ -168,6 +168,29 @@ def suivi():
     return render_template("suivi.html")
 
 
+@app.route("/suivi/qr.png")
+def suivi_qr():
+    """QR code de la page de suivi, à scanner depuis le téléphone (bouton « Vue téléphone »
+    du dashboard). Encodé par OpenCV, déjà au cœur du banc : ni bibliothèque ni service en
+    ligne de plus, et ça marche sans internet."""
+    lien = ALERTEUR.lien_suivi
+    if not lien:
+        return jsonify({"erreur": "Définir alertes.url_banc dans config.local.json"}), 404
+    try:
+        code = cv2.QRCodeEncoder_create().encode(lien)
+    except Exception as e:  # noqa: BLE001 — pas de QR code ne doit pas casser le dashboard
+        return jsonify({"erreur": f"QR code impossible : {e}"}), 503
+    if isinstance(code, tuple):            # selon la version d'OpenCV : (ok, image) ou image
+        code = code[-1]
+    ECHELLE, MARGE = 10, 40                # marge blanche obligatoire : sans elle, rien ne scanne
+    img = cv2.resize(code, None, fx=ECHELLE, fy=ECHELLE, interpolation=cv2.INTER_NEAREST)
+    img = cv2.copyMakeBorder(img, MARGE, MARGE, MARGE, MARGE, cv2.BORDER_CONSTANT, value=255)
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        return jsonify({"erreur": "Encodage PNG impossible"}), 503
+    return Response(buf.tobytes(), mimetype="image/png", headers={"Cache-Control": "no-store"})
+
+
 @app.route("/snapshot/<sid>")
 def snapshot(sid):
     s = SOURCES.get(sid)

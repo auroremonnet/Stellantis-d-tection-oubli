@@ -142,6 +142,10 @@ véhicule ?*
   injoignable, la page grise l'état au lieu d'afficher une valeur périmée.
 - La page est **autonome** : elle ne charge ni `app.js` ni `surveillance.js`. Le dashboard
   complet est inutilisable sur un écran de téléphone, et la page doit s'ouvrir vite.
+- **Pour l'ouvrir sur le téléphone** : bouton « Vue téléphone » de la carte *Surveillance
+  automatique*, qui affiche l'URL et son **QR code** (`/suivi/qr.png`). Le QR est encodé par
+  OpenCV, déjà une dépendance du banc : rien à installer, et aucun service en ligne — le
+  banc doit marcher sans internet.
 - `care/stockage.py` → `derniers_evenements(chemin, n)` ne lit que **la fin** du fichier
   (64 Ko), écarte une première ligne tronquée et ignore une ligne illisible : le journal
   grossit à chaque cycle et la page le relit en boucle.
@@ -156,8 +160,10 @@ Une ligne JSON par transition, pour l'application de suivi :
 ```
 
 `type` ∈ `veille`, `occupe`, `sortie`, `analyse`, `alerte`, `rappel`, `acquittement`,
-`inactif`. Un acquittement à distance écrit deux lignes : `acquittement`
-(« pris en charge à distance ») puis `veille`.
+`inactif`. Une transition n'écrit **qu'une ligne**, y compris l'acquittement à distance :
+il ramène la machine en veille, mais son événement est de type `acquittement`
+(« pris en charge à distance »), car c'est cela qui a du sens dans le journal. Le retour du
+conducteur, lui, n'écrit que son `occupe` (« conducteur revenu : alerte levée »).
 
 ## API
 
@@ -171,6 +177,7 @@ Une ligne JSON par transition, pour l'application de suivi :
 | POST | `/api/surveillance/demo` | démo uniquement : `{"occupant": true/false}` |
 | GET | `/api/evenements?n=20` | les `n` derniers événements de `evenements.jsonl` (`n` borné à 200) |
 | GET | `/suivi` | page de suivi pour téléphone (HTML) |
+| GET | `/suivi/qr.png` | QR code de `url_banc` + `/suivi`, à scanner depuis le téléphone ; `404` si `url_banc` n'est pas défini |
 
 ## Protocole de mesure proposé
 

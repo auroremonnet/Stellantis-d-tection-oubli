@@ -205,6 +205,11 @@ tr:hover td { background: #fafbfc; }
 .surv-banniere .chrono { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .surv-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .surv-actions + .surv-actions { margin-top: 2px; }
+.surv-qr { display: flex; gap: 12px; align-items: center; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.surv-qr img { width: 118px; height: 118px; flex: none; border-radius: 6px; image-rendering: pixelated; }
+.surv-qr-txt { min-width: 0; }
+.surv-qr-url { display: block; font-size: 12.5px; font-weight: 600; color: var(--brand); word-break: break-all; }
+.surv-qr p { margin: 5px 0 0; }
 .surv-histo { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); font-size: 12px; max-height: 150px; overflow: auto; }
 .surv-histo:empty { display: none; }
 .surv-histo li { display: grid; grid-template-columns: 58px 1fr; gap: 6px; padding: 2px 0; color: var(--ink-2); }

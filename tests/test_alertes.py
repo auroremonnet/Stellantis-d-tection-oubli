@@ -189,3 +189,9 @@ def test_clic_et_bouton_cohabitent(faux):
     a.notifier(CRITIQUE)
     h = _entetes(faux)
     assert h["Actions"] == BOUTON and h["Click"] == "http://banc.lan:5000/suivi"
+
+
+def test_etat_expose_le_lien_de_suivi(faux):
+    """Le dashboard lit alertes.suivi dans /api/etat pour le bouton « Vue téléphone »."""
+    assert Alerteur({"url_banc": "http://banc.lan:5000"}).etat()["suivi"] == "http://banc.lan:5000/suivi"
+    assert Alerteur({}).etat()["suivi"] == ""
