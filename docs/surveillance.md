@@ -14,7 +14,7 @@ le départ du conducteur et l'alerte**.
 
 | Exigence Euro NCAP | Réglage du banc (`config.json` → `surveillance`) |
 |---|---|
-| Premier avertissement < 15 s après verrouillage | `delai_sortie_s` = 8 s + analyse (≈ 1 à 4 s) → **9 à 12 s** mesurés |
+| Premier avertissement < 15 s après verrouillage | `delai_sortie_s` = 8 s + durée de l'analyse. **9,2 s mesurés en mode démo** (analyse simulée) ; à mesurer sur le banc réel, où l'analyse complète dure plus longtemps sur CPU — c'est la colonne `latence_alerte_s` du journal |
 | Escalade dans les 90 s si l'avertissement n'est pas traité | `delai_escalade_s` = 90 |
 | Rappel chaque minute pendant au moins 20 minutes | `periode_rappel_s` = 60, `duree_rappels_s` = 1200 |
 | Détection **directe** (mouvement, respiration, chaleur), pas une simple déduction d'ouverture de porte arrière | caméras RGB + thermique : détection directe |
@@ -42,21 +42,34 @@ INACTIF ────────────────────────
 
 Choix de conception, chacun motivé par un cas réel du banc :
 
-- **Adulte = grande silhouette.** Seule une détection `person` dont la boîte couvre au moins
-  35 % de la hauteur de l'image compte comme « adulte à bord » (`detection.hauteur_min_adulte`).
-  Un enfant dans un siège auto ou un bébé ne doit **jamais** empêcher de constater le départ du
-  conducteur — sinon l'enfant oublié bloquerait sa propre alerte.
-- **Présence confirmée, absence immédiate.** Il faut 1,5 s de présence continue pour passer à
-  « Occupé » (un reflet ou une veste prise pour une personne ne déclenche rien), mais la
-  première image sans adulte lance le compte à rebours : un oubli de détection d'une image ne
-  fait que retarder l'analyse, jamais l'empêcher.
+- **Adulte = grande silhouette, vue par les caméras avant.** Seule une détection `person` dont
+  la boîte couvre au moins 35 % de la hauteur de l'image compte comme « adulte à bord »
+  (`detection.hauteur_min_adulte`), et seulement sur les caméras qui voient le conducteur
+  (`surveillance.cameras_conducteur`, les deux caméras avant). Un enfant à l'arrière ne doit
+  **jamais** empêcher de constater le départ du conducteur — l'enfant oublié bloquerait sa
+  propre alerte — ni pouvoir lever une alerte critique en passant pour le conducteur qui revient.
+- **Contrôle de présence léger.** Toutes les 0,5 s, seul le modèle de base tourne, limité à la
+  classe « personne », en 480 px (≈ 140 ms/image sur CPU, contre ≈ 270 ms pour une détection
+  complète). Effet de bord utile, constaté sur les photos du 21/10 : quand tous les prompts sont
+  actifs, YOLOE étiquette parfois un passager adulte « bébé » ; limité à « personne », il le voit
+  bien comme une personne (0,93).
+- **Hystérésis.** Il faut 1,5 s de présence continue pour passer à « Occupé » (un reflet ou une
+  veste prise pour une personne ne déclenche rien) et 1 s d'absence continue pour passer en
+  « Sortie » (une image ratée ne fait pas d'aller-retour). Le compte à rebours part quand même
+  du dernier instant où l'adulte était vu : l'hystérésis ne rallonge pas la latence.
+- **Les alertes critiques ne sont jamais filtrées.** L'anti-spam (cooldown 60 s) ne concerne que
+  les objets ; la levée d'alerte remet les compteurs à zéro.
 - **Départ = dernier instant où l'adulte a été vu.** La latence affichée part de là, pas du
   premier échantillon « absent » : le chiffre ne flatte pas le système.
 - **Habitacle censé vide ⇒ toute personne est critique.** Après le départ, une détection
   « personne » est le plus souvent un enfant que le modèle ne sait pas nommer « enfant ».
-- **Un seul exécutant.** Le bouton « Verrouiller » ne lance pas l'analyse lui-même : il dépose
-  la demande, que le thread de surveillance exécute. Jamais deux analyses en parallèle, et un
-  désarmement pendant l'analyse n'envoie aucune notification.
+- **Un seul exécutant, des sessions étanches.** Le bouton « Verrouiller » ne lance pas
+  l'analyse lui-même : il dépose la demande, que le thread de surveillance exécute. Chaque
+  armement ouvre une session numérotée : un désarmement en pleine analyse rend la main
+  immédiatement, et l'analyse en cours, une fois finie, ne peut plus rien modifier ni notifier.
+- **Rien ne bloque la machine.** Si l'analyse, la décision ou l'écriture du journal échoue
+  (caméra débranchée, `essais.csv` ouvert dans Excel…), la machine revient en veille et
+  l'erreur reste affichée dans le dashboard.
 
 ## Architecture du code
 

@@ -56,8 +56,12 @@ En démo, les boutons « Démo : le conducteur monte / descend » remplacent le 
 
 Notification push via [ntfy.sh](https://ntfy.sh) (gratuit, sans compte) avec l'image annotée :
 
-1. Installer l'appli **ntfy** (Android / iOS) et s'abonner au topic `alertes.topic` de
-   `config.json`. **Changer la valeur par défaut** : le topic fait office de mot de passe.
+1. Installer l'appli **ntfy** (Android / iOS) et s'abonner au topic des alertes.
+   **Le topic fait office de mot de passe et le dépôt GitHub est public** : ne pas mettre le
+   vrai topic dans `config.json`. Le définir hors dépôt, au choix :
+   - variable d'environnement `CARE_NTFY_TOPIC` ;
+   - fichier `config.local.json` (ignoré par git), fusionné par-dessus `config.json`, par ex.
+     `{"alertes": {"topic": "care-g2-xxxxxxxx"}}`.
 2. Tester sans caméra : `python test_alerte.py`.
 
 Règle (une seule, dans `care/decision.py`) :
@@ -67,7 +71,10 @@ Règle (une seule, dans `care/decision.py`) :
 | **Critique** | enfant, bébé, chat, chien (RGB) ou source de chaleur (thermique) ; en surveillance, toute « présence humaine » après le départ du conducteur | priorité *urgent*, rappels |
 | **Objet** | objet de `alertes.classes_surveillees` ou zone nouvelle non identifiée, sans adulte à bord | priorité *high*, cooldown 60 s par objet |
 
-Pas de notification réelle en `--demo` (sauf `"en_demo": true`).
+Les alertes critiques ne sont jamais filtrées par l'anti-spam. En essai manuel, un adulte
+détecté à bord annule toute notification (l'opérateur est là). Pas de notification réelle en
+`--demo` (sauf `"en_demo": true`). Le réglage `ratio_confirmation` de l'ancienne version des
+alertes n'est plus utilisé : c'est `ratio_presence` (détection sur l'essai) qui joue ce rôle.
 
 ## Reconnaître les objets de valeur (téléphone, clés, portefeuille, carte, sac…)
 

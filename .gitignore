@@ -8,3 +8,4 @@ data/demo/
 datasets/
 runs/
 data/essais/brutes/
+config.local.json

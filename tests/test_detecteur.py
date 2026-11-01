@@ -31,10 +31,24 @@ def test_fusion_garde_deux_objets_distincts():
     assert len(fusionner([a, b], lib)) == 2
 
 
-def test_fusion_ne_melange_pas_deux_classes_au_meme_endroit():
+def test_fusion_garde_deux_objets_voisins_du_meme_moteur():
+    """Téléphone posé en partie sur un portefeuille (IoU ≈ 0,6) : deux objets."""
     tel = det("cell phone", 0.7, [0, 0, 100, 100])
-    port = det("wallet", 0.6, [0, 0, 100, 100])
+    port = det("wallet", 0.6, [25, 0, 125, 100])
     assert len(fusionner([tel, port], lib)) == 2
+
+
+def test_regression_un_seul_sac_vu_sous_trois_mots_cles():
+    """YOLOE fait le NMS par classe : un sac sortait en « sac », « sac à main » et « sac à dos »."""
+    sacs = [det("bag", 0.6, [0, 0, 200, 200]), det("handbag", 0.5, [2, 1, 201, 198]),
+            det("backpack", 0.4, [0, 3, 198, 200])]
+    assert [d["nom"] for d in fusionner(sacs, lib)] == ["bag"]
+
+
+def test_regression_cles_de_voiture_yoloe_et_cles_custom_fusionnees():
+    yoloe = det("car key", 0.7, [10, 10, 60, 40])
+    custom = det("keys", 0.5, [12, 10, 61, 42], source="custom")
+    assert fusionner([yoloe, custom], lib) == [custom]
 
 
 def test_bebe_yoloe_et_bebe_custom_fusionnes():
@@ -56,3 +70,7 @@ def test_adulte_selon_la_hauteur_de_boite():
     assert not est_adulte(det("person", 0.9, [0, 400, 100, 560], "vivant"), h)   # enfant au loin
     assert not est_adulte(det("child", 0.9, [0, 0, 300, 700], "vivant"), h)      # jamais « child »
     assert not est_adulte(det("person", 0.9, [0, 0, 300, 700], "valeur"), h)
+
+
+def test_regression_adulte_reconnu_avec_le_moteur_coco():
+    assert est_adulte(det("personne", 0.9, [0, 100, 300, 600], "vivant", source="coco"), 720)

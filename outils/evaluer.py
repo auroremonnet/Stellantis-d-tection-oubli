@@ -42,12 +42,14 @@ def lire_jeu(data_yaml: Path, split: str):
     racine = Path(cfg.get("path") or data_yaml.parent)
     if not racine.is_absolute():
         racine = (data_yaml.parent / racine).resolve()
-    rel = cfg.get(split) or cfg.get("val")
-    if rel is None:
-        sys.exit(f"Pas de split « {split} » dans {data_yaml}")
-    dossier = (racine / rel).resolve()
-    for img in sorted(p for p in dossier.rglob("*") if p.suffix.lower() in EXTENSIONS):
-        yield img, chemin_label(img), noms
+    rel = cfg.get(split)
+    if not rel:
+        sys.exit(f"Pas de split « {split} » dans {data_yaml} (splits : "
+                 f"{', '.join(k for k in ('train', 'val', 'test') if cfg.get(k))}). Utiliser --split.")
+    for r in (rel if isinstance(rel, list) else [rel]):  # YOLO accepte une liste de dossiers
+        dossier = (racine / r).resolve()
+        for img in sorted(p for p in dossier.rglob("*") if p.suffix.lower() in EXTENSIONS):
+            yield img, chemin_label(img), noms
 
 
 def chemin_label(img):

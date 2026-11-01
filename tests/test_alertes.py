@@ -75,3 +75,20 @@ def test_compatible_test_alerte_py(faux):
     a = Alerteur({"topic": "x"})
     assert a.envoyer("CARE · Test", "message", None)
     assert faux.appels[0]["params"]["priority"] == "high"
+
+
+def test_regression_critique_jamais_bloque_par_le_cooldown(faux):
+    """Une alerte critique levée à tort (ex. enfant pris pour le conducteur) puis
+    redéclenchée doit repartir immédiatement."""
+    a = Alerteur({"cooldown_s": 60}, envoi_synchrone=True)
+    assert a.notifier(CRITIQUE)
+    assert a.notifier(CRITIQUE, motif="acquittement")
+    assert a.notifier(CRITIQUE)
+    assert a.notifier(CRITIQUE)                    # même sans acquittement
+
+
+def test_acquittement_rearme_le_cooldown_des_objets(faux):
+    a = Alerteur({"cooldown_s": 60}, envoi_synchrone=True)
+    assert a.notifier(OBJET)
+    a.notifier(OBJET, motif="acquittement")
+    assert a.notifier(OBJET)                       # nouveau cycle : l'objet peut réalerter

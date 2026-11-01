@@ -26,6 +26,13 @@ def test_personne_critique_seulement_si_habitacle_cense_vide():
     assert d({"classes_vivant": ["personne"], "objets": ["clés"]}, vide=False) is None
 
 
+def test_regression_essai_manuel_operateur_a_bord_aucune_alerte():
+    """Opérateur dans la voiture + poupée chauffée : pas d'alerte urgente en essai manuel."""
+    r = {"classes_vivant": ["personne"], "objets": [], "vivant_thermique": True}
+    assert d(r, vide=False) is None
+    assert d(r, vide=True).niveau == "critique"     # en surveillance, c'est bien critique
+
+
 def test_thermique_seule_suffit_fusion_ou():
     a = d({"classes_vivant": [], "objets": [], "vivant_thermique": True})
     assert a.niveau == "critique" and "source de chaleur" in a.elements

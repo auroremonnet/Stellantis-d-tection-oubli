@@ -28,7 +28,10 @@ import time
 import cv2
 import numpy as np
 
+from .metriques_detection import canonique
 from .reference import iou, recouvrement
+
+RACINE_PROJET = __import__("pathlib").Path(__file__).resolve().parent.parent
 
 # ---- Moteur COCO (yolov8n/s/m/l.pt) --------------------------------------
 COCO_VIVANT = {0: "personne", 15: "chat", 16: "chien"}
@@ -60,22 +63,34 @@ def _ascii(s):
     return str(s).translate(_ACCENTS)
 
 
-def fusionner(dets, libelle=lambda n: n, iou_min=0.5, prioritaire="custom"):
-    """Supprime les doublons ENTRE moteurs : une détection est écartée si une détection
-    plus confiante d'un AUTRE moteur, de même libellé, recouvre sa boîte (IoU >= iou_min).
-    Le libellé sert de clé commune (« credit card » de YOLOE et « card » du modèle entraîné
-    donnent tous deux « carte bancaire »). Deux détections d'un même moteur ne sont jamais
-    fusionnées ici : son propre NMS l'a déjà fait, et deux objets voisins (deux
-    personnes côte à côte, un trousseau sur un portefeuille) doivent rester distincts.
+def fusionner(dets, libelle=lambda n: n, iou_min=0.5, prioritaire="custom", iou_meme_moteur=0.8):
+    """Supprime les doublons entre détections, en deux règles :
 
-    En cas de doublon, le moteur `prioritaire` (le modèle entraîné, spécialiste de nos
-    classes et de nos conventions de boîtes) l'emporte, quelle que soit la confiance :
-    les scores de deux modèles différents ne sont pas comparables entre eux."""
+    1. ENTRE moteurs : une détection est écartée si une détection d'un AUTRE moteur, de
+       même libellé canonique, recouvre sa boîte (IoU >= iou_min). Le moteur `prioritaire`
+       (le modèle entraîné, spécialiste de nos classes et de nos conventions de boîtes)
+       l'emporte quelle que soit la confiance : les scores de deux modèles ne se comparent
+       pas. Le libellé canonique sert de clé commune (« car key » de YOLOE et « keys » du
+       modèle entraîné donnent tous deux « clés »).
+    2. Dans un MÊME moteur, seulement pour les objets : deux boîtes quasi identiques
+       (IoU >= iou_meme_moteur) de libellés différents sont un seul objet vu sous plusieurs
+       mots-clés (« sac », « sac à main », « sac à dos » sur le même sac) → on garde la
+       plus confiante. Deux objets voisins (trousseau posé sur un portefeuille, deux
+       personnes côte à côte) se recouvrent bien moins et restent distincts.
+    """
+    cle = lambda d: canonique(libelle(d["nom"]))  # noqa: E731
     gardees = []
     for d in sorted(dets, key=lambda d: (d.get("source") != prioritaire, -d["conf"])):
-        if not any(g.get("source") != d.get("source")
-                   and libelle(g["nom"]) == libelle(d["nom"])
-                   and iou(g["boite"], d["boite"]) >= iou_min for g in gardees):
+        doublon = False
+        for g in gardees:
+            o = iou(g["boite"], d["boite"])
+            if g.get("source") != d.get("source"):
+                doublon = cle(g) == cle(d) and o >= iou_min
+            else:
+                doublon = g["type"] == d["type"] == "valeur" and o >= iou_meme_moteur
+            if doublon:
+                break
+        if not doublon:
             gardees.append(d)
     return gardees
 
@@ -84,7 +99,7 @@ def est_adulte(det, hauteur_image, hauteur_min=0.35):
     """Un adulte à bord = une « person » dont la boîte occupe une bonne part de la hauteur
     de l'image. Les petits gabarits (enfant dans un siège, bébé) ne comptent pas : ils ne
     doivent jamais empêcher la surveillance de constater le départ du conducteur."""
-    if det["nom"] != "person" or det["type"] != "vivant":
+    if det["nom"] not in ("person", "personne") or det["type"] != "vivant":  # YOLOE / COCO
         return False
     return (det["boite"][3] - det["boite"][1]) >= hauteur_min * hauteur_image
 
@@ -107,10 +122,12 @@ class Detecteur:
         self.imgsz = d.get("imgsz", 640)
         self.zoom_zones = d.get("zoom_zones", True)
         self.alerte_inconnu = d.get("alerte_zone_inconnue", True)
-        self.modele_custom = d.get("modele_custom", "modeles/care-v1.pt")
+        mc = __import__("pathlib").Path(d.get("modele_custom", "modeles/care-v1.pt"))
+        self.modele_custom = str(mc if mc.is_absolute() else RACINE_PROJET / mc)  # indépendant du dossier courant
         self.classes_custom = {**CLASSES_CUSTOM, **d.get("classes_custom", {})}
         self.conf_custom = d.get("confiance_custom", 0.35)
         self.hauteur_adulte = d.get("hauteur_min_adulte", 0.35)
+        self.imgsz_presence = d.get("imgsz_presence", 480)  # surveillance : plus petit = plus rapide
         self.model = None
         self.custom = None          # modèle entraîné (moteur hybride)
         self.erreur = ""
@@ -192,14 +209,29 @@ class Detecteur:
         return out
 
     def presence_adulte(self, sources):
-        """Vrai si un adulte est vu sur au moins une caméra (surveillance automatique)."""
+        """Vrai si un adulte est vu sur au moins une des caméras données (surveillance).
+        Appelé toutes les 0,5 s : modèle de base seul, classe « personne » seule, image
+        réduite — bien plus léger qu'une analyse complète, pour tenir le rythme sur CPU."""
         frames = [f for f in (s.derniere() for s in sources) if f is not None]
         if not frames or not self.pret:
             return False
-        for f, dets in zip(frames, self.detecter(frames)):
-            if any(est_adulte(d, f.shape[0], self.hauteur_adulte) for d in dets):
-                return True
+        idx = self._indice_personne()
+        if idx is None:
+            return False
+        with self._lock_inference:
+            res = self.model(frames, conf=self.conf_vivant, classes=[idx], verbose=False,
+                             imgsz=self.imgsz_presence)
+        for f, r in zip(frames, res):
+            for b in r.boxes.xyxy.tolist():
+                d = {"nom": "person", "type": "vivant", "boite": [int(v) for v in b]}
+                if est_adulte(d, f.shape[0], self.hauteur_adulte):
+                    return True
         return False
+
+    def _indice_personne(self):
+        if isinstance(self._noms, dict):  # COCO : {id: libellé}
+            return next((c for c, n in self._noms.items() if n == "personne"), None)
+        return self._noms.index("person") if "person" in self._noms else None
 
     def _lire(self, res, seuils):
         out = []

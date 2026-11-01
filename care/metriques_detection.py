@@ -16,8 +16,11 @@ from dataclasses import dataclass, field
 
 from .reference import iou
 
-# Plusieurs libellés désignent le même objet pour l'évaluation
-SYNONYMES = {"clés de voiture": "clés", "carte": "carte bancaire", "smartphone": "téléphone"}
+# Plusieurs libellés désignent le même objet (fusion des moteurs et évaluation). « enfant »
+# (prompt YOLOE) et « bébé » (classe entraînée) désignent le même poupon dans un siège auto :
+# sans ce rapprochement, la comparaison YOLOE vs modèle entraîné serait biaisée contre YOLOE.
+SYNONYMES = {"clés de voiture": "clés", "carte": "carte bancaire", "smartphone": "téléphone",
+             "enfant": "bébé"}
 
 
 def canonique(libelle: str) -> str:

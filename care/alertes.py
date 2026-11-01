@@ -2,8 +2,9 @@
 
 Reçoit des `Alerte` déjà décidées (care/decision.py) et se charge de l'envoi :
     - une notification par alerte, avec l'image annotée de l'analyse ;
-    - cooldown par élément (`cooldown_s`) : pas deux fois la même alerte coup sur coup
-      d'un essai à l'autre — les rappels d'escalade et la levée d'alerte passent outre ;
+    - cooldown par objet (`cooldown_s`) : pas deux fois le même objet coup sur coup d'un
+      essai à l'autre. Jamais pour une alerte critique (enfant, animal) ; les rappels
+      d'escalade passent outre et la levée d'alerte remet le compteur à zéro ;
     - priorité ntfy « urgent » pour le critique (sonne même en mode silencieux sur Android) ;
     - l'envoi part dans un thread : une panne réseau ne bloque jamais le banc.
 
@@ -56,12 +57,18 @@ class Alerteur:
             return False
         now = time.time()
         with self._lock:
-            if motif == "alerte":
+            if motif == "acquittement":
+                # le conducteur est revenu : un nouvel oubli doit pouvoir réalerter tout de suite
+                for e in alerte.elements:
+                    self._derniere.pop(e, None)
+            elif motif == "alerte" and alerte.niveau != "critique":
+                # anti-spam pour les objets seulement : une présence vivante n'est JAMAIS filtrée
                 frais = [e for e in alerte.elements if now - self._derniere.get(e, 0) >= self.cooldown]
                 if not frais:
                     return False
-            for e in alerte.elements:
-                self._derniere[e] = now
+            if motif != "acquittement":
+                for e in alerte.elements:
+                    self._derniere[e] = now
         titre = MOTIFS.get(motif, "") + alerte.titre
         if motif == "acquittement":
             message, priorite, tags = "Le conducteur est revenu au véhicule.", "default", "white_check_mark"

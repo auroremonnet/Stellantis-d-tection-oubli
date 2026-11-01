@@ -55,8 +55,11 @@ def corriger_yaml(chemin: Path) -> Path:
     if not roboflow:
         return chemin
     cfg["path"] = str(racine)
-    for split, dossier in roboflow.items():
-        cfg[split] = f"{dossier}/images"
+    for split, dossier in (("train", "train"), ("val", "valid"), ("test", "test")):
+        if split in roboflow:
+            cfg[split] = f"{dossier}/images"
+        else:
+            cfg.pop(split, None)  # export sans ce dossier : la clé « ../test/images » ferait planter val()
     chemin.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return chemin
 
@@ -104,6 +107,9 @@ def main(argv=None) -> int:
                  seed=0, deterministic=True, device=a.device, project=str(a.sortie), name=a.nom,
                  exist_ok=True, plots=True)
     meilleur = Path(modele.trainer.best)
+    dest = RACINE / "modeles"
+    dest.mkdir(exist_ok=True)
+    shutil.copy2(meilleur, dest / f"{a.nom}.pt")  # avant la validation : les poids ne se perdent jamais
 
     final = YOLO(str(meilleur))
     import yaml
@@ -113,9 +119,6 @@ def main(argv=None) -> int:
                   device=a.device, project=str(a.sortie), name=f"{a.nom}-{split}", exist_ok=True,
                   plots=True)
 
-    dest = RACINE / "modeles"
-    dest.mkdir(exist_ok=True)
-    shutil.copy2(meilleur, dest / f"{a.nom}.pt")
     infos = {
         "nom": a.nom,
         "date": datetime.now().isoformat(timespec="seconds"),

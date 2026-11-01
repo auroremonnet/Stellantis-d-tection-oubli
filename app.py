@@ -34,6 +34,13 @@ ARGS = parser.parse_args()
 
 with open(os.path.join(RACINE, "config.json"), encoding="utf-8") as fh:
     CFG = json.load(fh)
+# Réglages propres au poste, hors dépôt (le dépôt est public) : config.local.json est
+# ignoré par git et fusionné section par section par-dessus config.json.
+_LOCAL = os.path.join(RACINE, "config.local.json")
+if os.path.exists(_LOCAL):
+    with open(_LOCAL, encoding="utf-8") as fh:
+        for _k, _v in json.load(fh).items():
+            CFG[_k] = {**CFG.get(_k, {}), **_v} if isinstance(_v, dict) else _v
 
 DEMO = ARGS.demo
 DATA = os.path.join(RACINE, "data", "demo" if DEMO else "essais")
@@ -56,6 +63,8 @@ REF_PARAMS.update(CFG.get("reference", {}))
 REFERENCE = Reference(os.path.join(DATA, "reference"), REF_PARAMS)
 
 CFG_ALERTES = dict(CFG.get("alertes", {}))
+if os.environ.get("CARE_NTFY_TOPIC"):  # le topic ntfy fait office de mot de passe
+    CFG_ALERTES["topic"] = os.environ["CARE_NTFY_TOPIC"]
 if DEMO and not CFG_ALERTES.get("en_demo", False):
     CFG_ALERTES["actif"] = False  # pas de notification réelle en démo, sauf demande explicite
 ALERTEUR = Alerteur(CFG_ALERTES)
@@ -105,8 +114,9 @@ def _analyser_surveillance(contexte):
 
 
 def _enregistrer_surveillance(r, contexte):
+    # lecture seule : `r` est aussi le dernier résultat lu par /api/surveillance
     alerte = r.get("alerte") or {}
-    _enregistrer(r, contexte, "auto", r.pop("_brutes", None), alerte.get("niveau"))
+    _enregistrer(r, contexte, "auto", r.get("_brutes"), alerte.get("niveau"))
 
 
 def _demo_scene(scene):
@@ -115,10 +125,16 @@ def _demo_scene(scene):
             s.scene = scene
 
 
+# Caméras qui voient le conducteur : elles seules décident « adulte à bord / parti ».
+# Un enfant proche d'une caméra arrière ne peut ainsi ni retenir la surveillance en
+# « Occupé », ni lever une alerte critique en se faisant passer pour le conducteur qui revient.
+_CAMS_CONDUCTEUR = set(CFG.get("surveillance", {}).get("cameras_conducteur") or [])
+RGB_CONDUCTEUR = [s for s in RGB if s.id in _CAMS_CONDUCTEUR] or RGB
+
 SUPERVISEUR = Superviseur(
     MachineOubli(Parametres.depuis_config(CFG.get("surveillance"))),
     Branchements(
-        presence_adulte=lambda: DETECTEUR.presence_adulte(RGB),
+        presence_adulte=lambda: DETECTEUR.presence_adulte(RGB_CONDUCTEUR),
         analyser=_analyser_surveillance,
         decider=lambda r: decider(r, habitacle_vide_attendu=True,
                                   objets_surveilles=ALERTEUR.surveillees,
@@ -198,6 +214,8 @@ def config():
 
 @app.route("/api/reference", methods=["POST"])
 def capturer_reference():
+    if SUPERVISEUR.actif:
+        return jsonify({"erreur": "Surveillance automatique en cours : la référence est capturée à l'armement"}), 409
     if DEMO:
         return jsonify({"erreur": "Pas de référence en mode démo"}), 400
     if not DETECTEUR.pret:

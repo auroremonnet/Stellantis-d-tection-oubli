@@ -48,6 +48,7 @@ class Action(str, enum.Enum):
 @dataclass(frozen=True)
 class Parametres:
     confirmation_presence_s: float = 1.5   # présence continue avant de déclarer « occupé »
+    confirmation_absence_s: float = 1.0    # absence continue avant de passer en « sortie »
     delai_sortie_s: float = 8.0            # absence continue avant d'analyser
     delai_escalade_s: float = 90.0         # premier rappel après l'alerte
     periode_rappel_s: float = 60.0         # rappels suivants
@@ -154,7 +155,10 @@ class MachineOubli:
 
         if self.etat is Etat.VEILLE and presence_confirmee:
             self._aller(Etat.OCCUPE, "occupant à bord")
-        elif self.etat is Etat.OCCUPE and not adulte_present:
+        elif (self.etat is Etat.OCCUPE and not adulte_present
+              and now - c.absent_depuis >= self.p.confirmation_absence_s):
+            # hystérésis : une image ratée ne fait pas d'aller-retour Occupé ↔ Sortie. Le
+            # compte à rebours part quand même du dernier instant où l'adulte était vu.
             self._aller(Etat.SORTIE, "plus d'adulte détecté")
         elif self.etat is Etat.SORTIE:
             if adulte_present:
@@ -241,45 +245,64 @@ class Branchements:
 
 @dataclass
 class Superviseur:
-    """Fait tourner la MachineOubli dans un thread, au rythme de `periode_s`."""
+    """Fait tourner la MachineOubli dans un thread, au rythme de `periode_s`.
+
+    Chaque armement ouvre une « session » numérotée (`_generation`). Un thread d'une
+    session terminée — par exemple encore en pleine analyse au moment du désarmement —
+    finit son travail mais ne peut plus rien modifier ni notifier : toutes ses écritures
+    vérifient d'abord que sa session est toujours la session courante."""
     machine: MachineOubli
     branchements: Branchements
     periode_s: float = 0.5
     contexte: dict = field(default_factory=dict)
-    erreur_boucle: str = ""      # observation impossible (caméra, modèle) — effacée au tour suivant réussi
-    erreur_analyse: str = ""     # dernière analyse en échec — effacée à la prochaine analyse réussie
+    erreur_boucle: str = ""          # observation impossible (caméra, modèle) — effacée au tour suivant réussi
+    erreur_analyse: str = ""         # dernière analyse en échec — effacée à la prochaine analyse réussie
+    erreur_enregistrement: str = ""  # journal illisible (CSV ouvert dans Excel…) — effacée au prochain succès
     dernier_resultat: dict | None = None
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+    _pilotage: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _generation: int = field(default=0, init=False, repr=False)
     _derniere_alerte: Any = field(default=None, init=False, repr=False)
     _vu: int = field(default=0, init=False, repr=False)
     _en_attente: list = field(default_factory=list, init=False, repr=False)
 
     # ---- pilotage ----------------------------------------------------------
     def armer(self, contexte: dict | None = None) -> None:
-        self.desarmer()
-        with self._lock:
-            self.contexte = dict(contexte or {})
-            self.erreur_boucle = self.erreur_analyse = ""
-            self.dernier_resultat, self._derniere_alerte = None, None
-            self._en_attente = []
-            self.machine.armer()
-            self._publier()
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._boucle, name="surveillance", daemon=True)
-        self._thread.start()
+        with self._pilotage:
+            self._arreter()
+            with self._lock:
+                self.contexte = dict(contexte or {})
+                self.erreur_boucle = self.erreur_analyse = self.erreur_enregistrement = ""
+                self.dernier_resultat, self._derniere_alerte = None, None
+                self._en_attente = []
+                self.machine.armer()
+                self._publier()
+                gen = self._generation
+            stop = threading.Event()
+            self._stop = stop
+            self._thread = threading.Thread(target=self._boucle, args=(gen, stop),
+                                            name="surveillance", daemon=True)
+            self._thread.start()
 
     def desarmer(self) -> None:
+        with self._pilotage:
+            self._arreter()
+            with self._lock:
+                if self.machine.etat is not Etat.INACTIF:
+                    self.machine.desarmer()
+                    self._publier()
+
+    def _arreter(self) -> None:
+        """Clôt la session courante sans attendre la fin d'une analyse en cours."""
         self._stop.set()
+        with self._lock:
+            self._generation += 1
         t = self._thread
         if t is not None and t.is_alive() and t is not threading.current_thread():
-            t.join(timeout=5)
+            t.join(timeout=0.5)
         self._thread = None
-        with self._lock:
-            if self.machine.etat is not Etat.INACTIF:
-                self.machine.desarmer()
-                self._publier()
 
     def verrouiller(self) -> None:
         """Les actions sont exécutées par le thread de surveillance, jamais par l'appelant
@@ -290,7 +313,7 @@ class Superviseur:
 
     @property
     def erreur(self) -> str:
-        return self.erreur_boucle or self.erreur_analyse
+        return self.erreur_boucle or self.erreur_analyse or self.erreur_enregistrement
 
     @property
     def actif(self) -> bool:
@@ -307,55 +330,72 @@ class Superviseur:
         return out
 
     # ---- boucle ------------------------------------------------------------
-    def _boucle(self) -> None:
-        while not self._stop.is_set():
+    def _courante(self, gen: int) -> bool:
+        return gen == self._generation
+
+    def _boucle(self, gen: int, stop: threading.Event) -> None:
+        while not stop.is_set() and self._courante(gen):
             debut = time.monotonic()
             try:
                 with self._lock:
+                    if not self._courante(gen):
+                        break
                     actions, self._en_attente = self._en_attente, []
                 if not actions:
                     present = bool(self.branchements.presence_adulte())
                     with self._lock:
+                        if not self._courante(gen):
+                            break
                         actions = self.machine.observer(present)
                         self._publier()
                 self.erreur_boucle = ""
-                self._executer(actions)
+                self._executer(actions, gen)
             except Exception as e:  # noqa: BLE001 — une erreur ponctuelle ne doit pas tuer la boucle
                 self.erreur_boucle = f"{type(e).__name__}: {e}"
-            self._stop.wait(max(0.0, self.periode_s - (time.monotonic() - debut)))
+            stop.wait(max(0.0, self.periode_s - (time.monotonic() - debut)))
 
-    def _executer(self, actions: list[Action]) -> None:
+    def _executer(self, actions: list[Action], gen: int) -> None:
         b = self.branchements
         for a in actions:
             if a is Action.ANALYSER:
-                try:
-                    resultat = b.analyser(self.contexte)
-                except Exception as e:  # noqa: BLE001
-                    with self._lock:
-                        self.erreur_analyse = f"analyse impossible : {e}"
-                        self.machine.conclure_analyse(None, "analyse en échec")
-                        self._publier()
-                    continue
-                alerte = b.decider(resultat)
-                self.erreur_analyse = ""
-                with self._lock:
-                    if self._stop.is_set() or self.machine.etat is not Etat.ANALYSE:
-                        continue  # désarmé pendant l'analyse : on ne notifie rien
-                    self.machine.conclure_analyse(getattr(alerte, "niveau", None),
-                                                  getattr(alerte, "resume", ""))
-                    resultat = {**resultat, "latence_alerte_s": self.machine.derniere_latence_s,
-                                "alerte": None if alerte is None else alerte.en_dict()}
-                    self.dernier_resultat = resultat
-                    self._derniere_alerte = alerte
-                    self._publier()
-                if alerte is not None:
-                    b.notifier(alerte, resultat, "alerte")
-                b.enregistrer(resultat, self.contexte)
+                self._analyser(gen)
             elif a is Action.RAPPELER and self._derniere_alerte is not None:
                 b.notifier(self._derniere_alerte, self.dernier_resultat or {}, "rappel")
             elif a is Action.ACQUITTER and self._derniere_alerte is not None:
                 b.notifier(self._derniere_alerte, self.dernier_resultat or {}, "acquittement")
                 self._derniere_alerte = None
+
+    def _analyser(self, gen: int) -> None:
+        """Analyse → décision → verdict. Quoi qu'il arrive, la machine sort de ANALYSE :
+        une exception (caméra, modèle, règle de décision) donne « analyse en échec »."""
+        b = self.branchements
+        try:
+            resultat = b.analyser(self.contexte)
+            alerte = b.decider(resultat)
+        except Exception as e:  # noqa: BLE001
+            with self._lock:
+                if self._courante(gen):
+                    self.erreur_analyse = f"analyse impossible : {type(e).__name__}: {e}"
+                    self.machine.conclure_analyse(None, "analyse en échec")
+                    self._publier()
+            return
+        with self._lock:
+            if not self._courante(gen) or self.machine.etat is not Etat.ANALYSE:
+                return  # session close pendant l'analyse : on ne notifie rien
+            self.erreur_analyse = ""
+            self.machine.conclure_analyse(getattr(alerte, "niveau", None), getattr(alerte, "resume", ""))
+            resultat = {**resultat, "latence_alerte_s": self.machine.derniere_latence_s,
+                        "alerte": None if alerte is None else alerte.en_dict()}
+            self.dernier_resultat = resultat
+            self._derniere_alerte = alerte
+            self._publier()
+        if alerte is not None:
+            b.notifier(alerte, resultat, "alerte")
+        try:
+            b.enregistrer(resultat, self.contexte)
+            self.erreur_enregistrement = ""
+        except Exception as e:  # noqa: BLE001 — l'alerte est partie ; on signale la perte de la ligne
+            self.erreur_enregistrement = f"essai non journalisé : {type(e).__name__}: {e}"
 
     def _publier(self) -> None:
         """Transmet les nouveaux événements de la machine au journal (une seule fois chacun)."""

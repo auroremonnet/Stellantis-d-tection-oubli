@@ -1,6 +1,8 @@
 """Décision d'alerte à partir du résultat d'une analyse (Detecteur.analyser).
 
-Règle unique, utilisée par l'essai manuel ET par la surveillance automatique :
+Règle unique des NOTIFICATIONS, utilisée par l'essai manuel ET par la surveillance
+automatique (le badge CRITIQUE / ALERTE / RAS du journal, lui, évalue le détecteur
+approche par approche, A1 vs A2 : voir care/stockage.py) :
 
     CRITIQUE  un être vivant à protéger est détecté : enfant, bébé, chat, chien
               (RGB), ou source de chaleur vivante (thermique, fusion « OU » = A2).
@@ -9,8 +11,9 @@ Règle unique, utilisée par l'essai manuel ET par la surveillance automatique :
               souvent un enfant que le modèle nomme « personne ».
     OBJET     un objet de valeur surveillé (ou une zone nouvelle non identifiée)
               est vu alors qu'aucun adulte n'est à bord.
-    rien      sinon. En essai manuel, un adulte présent annule l'alerte objet
-              (règle d'origine des alertes ntfy : quelqu'un est là, rien n'est oublié).
+    rien      sinon. En essai manuel, un adulte présent annule toute alerte (règle
+              d'origine des alertes ntfy : quelqu'un est là, rien n'est oublié) — sinon
+              une campagne de 10 répétitions opérateur à bord enverrait des alertes urgentes.
 """
 from __future__ import annotations
 
@@ -78,6 +81,8 @@ def decider(resultat: dict, *, habitacle_vide_attendu: bool,
     vivants = _liste_champ(resultat, "classes_vivant")
     objets = _liste_champ(resultat, "objets")
     adulte = PERSONNE in vivants
+    if adulte and not habitacle_vide_attendu:
+        return None  # essai manuel, quelqu'un est à bord : rien n'est oublié
 
     a_proteger = sorted(v for v in vivants if v in VIVANTS_A_PROTEGER)
     if adulte and habitacle_vide_attendu:
@@ -94,8 +99,6 @@ def decider(resultat: dict, *, habitacle_vide_attendu: bool,
                     "Vérifiez immédiatement les sièges.",
             elements=tuple(a_proteger), priorite="urgent", tags="warning,baby,oncoming_automobile")
 
-    if adulte:  # quelqu'un est à bord : rien n'est oublié
-        return None
     retenus = [o for o in objets
                if (o == INCONNU and alerter_inconnu)
                or (o != INCONNU and (objets_surveilles is None or o in objets_surveilles))]

@@ -66,7 +66,8 @@
     "alerte_zone_inconnue": true,
     "modele_custom": "modeles/care-v1.pt",
     "confiance_custom": 0.35,
-    "hauteur_min_adulte": 0.35
+    "hauteur_min_adulte": 0.35,
+    "imgsz_presence": 480
   },
   "reference": {
     "iou_fixe": 0.5,
@@ -154,12 +155,17 @@
   "surveillance": {
     "periode_s": 0.5,
     "confirmation_presence_s": 1.5,
+    "confirmation_absence_s": 1.0,
     "delai_sortie_s": 8,
     "delai_escalade_s": 90,
     "periode_rappel_s": 60,
     "duree_rappels_s": 1200,
     "niveaux_escalade": [
       "critique"
+    ],
+    "cameras_conducteur": [
+      "rgb0",
+      "rgb1"
     ]
   },
   "sauver_images_brutes": true

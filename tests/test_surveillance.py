@@ -259,3 +259,76 @@ def test_desarmer_pendant_l_analyse_n_envoie_rien():
     threading.Timer(0.05, go.set).start()
     sup.desarmer()
     assert notifs == [] and sup.machine.etat is Etat.INACTIF
+
+
+def test_hysteresis_une_image_ratee_ne_fait_pas_sortir(m, h):
+    monter(m, h)
+    observer_pendant(m, h, False, 0.5)        # un seul échantillon sans adulte
+    assert m.etat is Etat.OCCUPE
+    observer_pendant(m, h, True, 0.5)
+    observer_pendant(m, h, False, 1.5)        # 1er échantillon absent + 1 s d'absence continue
+    assert m.etat is Etat.SORTIE
+
+
+# ---- régressions de la relecture --------------------------------------------
+def test_regression_pas_de_boucle_zombie_apres_analyse_lente():
+    """Désarmer pendant une analyse longue puis réarmer : l'ancien thread finit son
+    analyse mais ne touche plus à la nouvelle session, et ne survit pas."""
+    notifs, lent = [], threading.Event()
+
+    def analyser(ctx):
+        lent.wait(3)
+        return {"objets": ["clés"]}
+
+    b = Branchements(presence_adulte=lambda: False, analyser=analyser,
+                     decider=lambda r: Alerte("objet", "t", "m", ("clés",)),
+                     notifier=lambda *a: notifs.append(a))
+    sup = Superviseur(MachineOubli(), b, periode_s=0.01)
+    sup.armer()
+    sup.verrouiller()
+    assert _attendre(lambda: sup.machine.etat is Etat.ANALYSE)
+    t0 = time.monotonic()
+    sup.desarmer()
+    assert time.monotonic() - t0 < 1.5           # ne bloque plus la requête HTTP 5 s
+    sup.armer()
+    try:
+        lent.set()                                # l'ancienne analyse se termine maintenant
+        assert _attendre(lambda: sum(t.name == "surveillance" for t in threading.enumerate()) == 1)
+        time.sleep(0.1)
+        assert sup.machine.etat is Etat.VEILLE and notifs == []
+    finally:
+        sup.desarmer()
+
+
+def test_regression_decider_en_erreur_ne_bloque_pas_en_analyse():
+    def decider(r):
+        raise KeyError("objets")
+
+    b = Branchements(presence_adulte=lambda: False, analyser=lambda c: {}, decider=decider)
+    sup = Superviseur(MachineOubli(), b, periode_s=0.01)
+    sup.armer()
+    try:
+        sup.verrouiller()
+        assert _attendre(lambda: sup.machine.etat is Etat.VEILLE and "KeyError" in sup.erreur)
+        time.sleep(0.05)
+        assert "KeyError" in sup.erreur           # l'erreur reste visible (pas effacée au tour suivant)
+    finally:
+        sup.desarmer()
+
+
+def test_regression_journal_illisible_est_signale():
+    def enregistrer(r, c):
+        raise PermissionError("essais.csv ouvert dans Excel")
+
+    notifs = []
+    b = Branchements(presence_adulte=lambda: False, analyser=lambda c: {"objets": ["clés"]},
+                     decider=lambda r: Alerte("objet", "t", "m", ("clés",)),
+                     notifier=lambda *a: notifs.append(a), enregistrer=enregistrer)
+    sup = Superviseur(MachineOubli(), b, periode_s=0.01)
+    sup.armer()
+    try:
+        sup.verrouiller()
+        assert _attendre(lambda: "Excel" in sup.erreur)
+        assert len(notifs) == 1                    # l'alerte est quand même partie
+    finally:
+        sup.desarmer()
