@@ -1,4 +1,5 @@
-"""Envoi ntfy : priorité, cooldown, rappels, bouton d'acquittement, réseau (requests simulé)."""
+"""Envoi ntfy : priorité, cooldown, rappels, bouton d'acquittement, lien de suivi,
+robustesse réseau (requests simulé)."""
 import numpy as np
 import pytest
 
@@ -163,3 +164,34 @@ def test_acquittement_a_distance_rearme_le_cooldown(faux):
     assert a.notifier(OBJET)
     a.notifier(OBJET, motif="acquittement_distant")
     assert a.notifier(OBJET)                                   # nouveau cycle possible
+
+
+# ---- lien vers la page de suivi (en-tête ntfy « Click ») -------------------------
+def test_clic_ouvre_la_page_de_suivi(faux):
+    """Toucher la notification ouvre /suivi : l'état du banc et le bouton d'acquittement."""
+    a = alerteur(url_banc="http://banc.lan:5000/")
+    assert a.lien_suivi == "http://banc.lan:5000/suivi"
+    for i, motif in enumerate(("alerte", "rappel", "acquittement_distant")):
+        assert a.notifier(CRITIQUE, motif=motif)
+        assert _entetes(faux, i)["Click"] == "http://banc.lan:5000/suivi"
+
+
+def test_pas_de_clic_sans_url_banc(faux):
+    a = alerteur()
+    assert a.lien_suivi == ""
+    assert a.notifier(CRITIQUE)
+    assert "Click" not in _entetes(faux)
+    assert faux.appels[0]["headers"] is None      # aucun en-tête inutile
+
+
+def test_clic_et_bouton_cohabitent(faux):
+    a = alerteur(url_banc="http://banc.lan:5000")
+    a.notifier(CRITIQUE)
+    h = _entetes(faux)
+    assert h["Actions"] == BOUTON and h["Click"] == "http://banc.lan:5000/suivi"
+
+
+def test_etat_expose_le_lien_de_suivi(faux):
+    """Le dashboard lit alertes.suivi dans /api/etat pour le bouton « Vue téléphone »."""
+    assert Alerteur({"url_banc": "http://banc.lan:5000"}).etat()["suivi"] == "http://banc.lan:5000/suivi"
+    assert Alerteur({}).etat()["suivi"] == ""

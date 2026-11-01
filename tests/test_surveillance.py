@@ -135,7 +135,10 @@ def test_acquittement_a_distance_leve_l_alerte_et_stoppe_les_rappels(m, h):
     assert m.acquitter() == [Action.ACQUITTER]
     assert m.etat is Etat.VEILLE and m.niveau_alerte is None and m.rappels == 0
     assert observer_pendant(m, h, False, 300, pas=1.0) == []      # plus aucun rappel
-    assert [e.type for e in m.historique][-2:] == ["acquittement", "veille"]
+    # une seule ligne de journal, pas « acquittement » + « veille » au même horodatage
+    assert [e.type for e in m.historique][-1] == "acquittement"
+    assert [e.detail for e in m.historique][-1] == "pris en charge à distance"
+    assert [e.type for e in m.historique].count("veille") == 1   # celui de l'armement
 
 
 def test_acquittement_a_distance_sans_alerte_est_sans_effet(m, h):

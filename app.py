@@ -21,7 +21,7 @@ from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDem
 from care.decision import decider
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.reference import Reference
-from care.stockage import Journal, metriques
+from care.stockage import Journal, derniers_evenements, metriques
 from care.surveillance import Branchements, MachineOubli, Parametres, Superviseur
 
 RACINE = os.path.dirname(os.path.abspath(__file__))
@@ -161,6 +161,36 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/suivi")
+def suivi():
+    """Page de suivi pour le téléphone : état, dernière alerte, acquittement. C'est la page
+    ouverte en touchant la notification ntfy (en-tête « Click » → url_banc + /suivi)."""
+    return render_template("suivi.html")
+
+
+@app.route("/suivi/qr.png")
+def suivi_qr():
+    """QR code de la page de suivi, à scanner depuis le téléphone (bouton « Vue téléphone »
+    du dashboard). Encodé par OpenCV, déjà au cœur du banc : ni bibliothèque ni service en
+    ligne de plus, et ça marche sans internet."""
+    lien = ALERTEUR.lien_suivi
+    if not lien:
+        return jsonify({"erreur": "Définir alertes.url_banc dans config.local.json"}), 404
+    try:
+        code = cv2.QRCodeEncoder_create().encode(lien)
+    except Exception as e:  # noqa: BLE001 — pas de QR code ne doit pas casser le dashboard
+        return jsonify({"erreur": f"QR code impossible : {e}"}), 503
+    if isinstance(code, tuple):            # selon la version d'OpenCV : (ok, image) ou image
+        code = code[-1]
+    ECHELLE, MARGE = 10, 40                # marge blanche obligatoire : sans elle, rien ne scanne
+    img = cv2.resize(code, None, fx=ECHELLE, fy=ECHELLE, interpolation=cv2.INTER_NEAREST)
+    img = cv2.copyMakeBorder(img, MARGE, MARGE, MARGE, MARGE, cv2.BORDER_CONSTANT, value=255)
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        return jsonify({"erreur": "Encodage PNG impossible"}), 503
+    return Response(buf.tobytes(), mimetype="image/png", headers={"Cache-Control": "no-store"})
+
+
 @app.route("/snapshot/<sid>")
 def snapshot(sid):
     s = SOURCES.get(sid)
@@ -263,6 +293,18 @@ def nouvel_essai():
         ALERTEUR.notifier(alerte, mosaique(r["images_rgb"]))
     _eid, ligne = _enregistrer(r, d, "manuel", brutes, alerte and alerte.niveau)
     return jsonify(ligne)
+
+
+@app.route("/api/evenements")
+def api_evenements():
+    """Derniers événements de la surveillance, lus dans evenements.jsonl (donc conservés
+    d'un lancement du banc à l'autre, contrairement à l'historique en mémoire renvoyé par
+    /api/surveillance)."""
+    try:
+        n = int(request.args.get("n", 20))
+    except (TypeError, ValueError):
+        n = 20
+    return jsonify({"evenements": derniers_evenements(EVENEMENTS, max(1, min(n, 200)))})
 
 
 # ---- API surveillance automatique -----------------------------------------

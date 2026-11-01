@@ -79,6 +79,15 @@
           <button class="btn btn-secondary" type="button" id="btn-armer">Armer</button>
           <button class="btn btn-secondary" type="button" id="btn-verrou" hidden title="Simule l'événement « véhicule verrouillé » : analyse immédiate">Verrouiller</button>
           <button class="btn btn-link" type="button" id="btn-desarmer" hidden>Désarmer</button>
+          <button class="btn btn-link" type="button" id="btn-suivi"
+                  title="Page de suivi à ouvrir sur un téléphone">Vue téléphone</button>
+        </div>
+        <div class="surv-qr" id="surv-qr" hidden>
+          <img id="surv-qr-img" alt="QR code de la page de suivi" hidden>
+          <div class="surv-qr-txt">
+            <a class="surv-qr-url" id="surv-qr-url" href="#" target="_blank" rel="noopener"></a>
+            <p class="muted small" id="surv-qr-aide"></p>
+          </div>
         </div>
         <div class="surv-actions" id="surv-demo" hidden>
           <button class="btn btn-link" type="button" data-occupant="1">Démo : le conducteur monte</button>

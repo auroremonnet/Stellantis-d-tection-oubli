@@ -119,6 +119,36 @@ notification ntfy ──[Je m'en occupe]──▶ POST /api/surveillance/acquitt
   cassent les en-têtes, et c'est pour cela que titre et message passent, eux, en query params.
 - Comme le verrouillage, l'acquittement est **déposé** et exécuté par le thread de
   surveillance : un seul exécutant, jamais deux actions en parallèle.
+- **Toucher la notification** (et non le bouton) ouvre la page de suivi `/suivi`
+  (en-tête ntfy `Click`, même base `url_banc`). Les deux cohabitent : le bouton agit sans
+  rien ouvrir, le clic ouvre la page pour voir ce qui se passe.
+
+## Page de suivi (`/suivi`)
+
+Page séparée du dashboard, pensée pour un téléphone : c'est elle qu'on ouvre en touchant la
+notification, et elle répond à la seule question qui compte à ce moment-là — *où en est le
+véhicule ?*
+
+| Bloc | Contenu |
+|---|---|
+| État | `Veille` / `Occupé` / `Sortie` / `Analyse` / `Alerte` en très gros, **couleur selon l'état** (vert occupé, ambre sortie, rouge pulsé pour une alerte critique, ambre pour une alerte objet, gris désarmé) |
+| Compte à rebours | affiché en grand pendant l'état `Sortie` |
+| Dernière alerte | niveau, titre, message, heure, latence départ → verdict comparée aux 15 s Euro NCAP, nombre de rappels, image annotée (`/images/<id>_rgb.jpg`) |
+| Acquittement | bouton **« Je m'en occupe »** pleine largeur tant que l'alerte est en cours → `POST /api/surveillance/acquitter` (le `409` est affiché tel quel : l'alerte venait d'être levée) |
+| Journal | les 20 derniers événements, lus dans `evenements.jsonl` donc **conservés d'un lancement du banc à l'autre**, contrairement à l'historique en mémoire de `/api/surveillance` |
+
+- **Rythme** : `/api/surveillance` toutes les **secondes** (le compte à rebours doit défiler),
+  `/api/evenements` toutes les 3 secondes et à chaque changement d'état. Si le banc devient
+  injoignable, la page grise l'état au lieu d'afficher une valeur périmée.
+- La page est **autonome** : elle ne charge ni `app.js` ni `surveillance.js`. Le dashboard
+  complet est inutilisable sur un écran de téléphone, et la page doit s'ouvrir vite.
+- **Pour l'ouvrir sur le téléphone** : bouton « Vue téléphone » de la carte *Surveillance
+  automatique*, qui affiche l'URL et son **QR code** (`/suivi/qr.png`). Le QR est encodé par
+  OpenCV, déjà une dépendance du banc : rien à installer, et aucun service en ligne — le
+  banc doit marcher sans internet.
+- `care/stockage.py` → `derniers_evenements(chemin, n)` ne lit que **la fin** du fichier
+  (64 Ko), écarte une première ligne tronquée et ignore une ligne illisible : le journal
+  grossit à chaque cycle et la page le relit en boucle.
 
 ## Format des événements (`data/essais/evenements.jsonl`)
 
@@ -130,8 +160,10 @@ Une ligne JSON par transition, pour l'application de suivi :
 ```
 
 `type` ∈ `veille`, `occupe`, `sortie`, `analyse`, `alerte`, `rappel`, `acquittement`,
-`inactif`. Un acquittement à distance écrit deux lignes : `acquittement`
-(« pris en charge à distance ») puis `veille`.
+`inactif`. Une transition n'écrit **qu'une ligne**, y compris l'acquittement à distance :
+il ramène la machine en veille, mais son événement est de type `acquittement`
+(« pris en charge à distance »), car c'est cela qui a du sens dans le journal. Le retour du
+conducteur, lui, n'écrit que son `occupe` (« conducteur revenu : alerte levée »).
 
 ## API
 
@@ -143,6 +175,9 @@ Une ligne JSON par transition, pour l'application de suivi :
 | POST | `/api/surveillance/acquitter` | bouton « Je m'en occupe » de la notification : lève l'alerte et stoppe les rappels ; `409` s'il n'y a pas d'alerte en cours |
 | POST | `/api/surveillance/desarmer` | arrête la surveillance |
 | POST | `/api/surveillance/demo` | démo uniquement : `{"occupant": true/false}` |
+| GET | `/api/evenements?n=20` | les `n` derniers événements de `evenements.jsonl` (`n` borné à 200) |
+| GET | `/suivi` | page de suivi pour téléphone (HTML) |
+| GET | `/suivi/qr.png` | QR code de `url_banc` + `/suivi`, à scanner depuis le téléphone ; `404` si `url_banc` n'est pas défini |
 
 ## Protocole de mesure proposé
 
