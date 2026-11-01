@@ -6,7 +6,9 @@ Scénario joué sur le banc :
     3. il descend : dès qu'aucun adulte n'est vu pendant `delai_sortie_s`
        (ou immédiatement sur « verrouillage »), l'analyse complète est lancée ;
     4. verdict : alerte (critique ou objet) ou rien à signaler ;
-    5. en cas d'alerte critique sans retour du conducteur : rappels (escalade).
+    5. en cas d'alerte critique sans retour du conducteur : rappels (escalade) ;
+    6. le conducteur revient — ou appuie sur « Je m'en occupe » dans la notification :
+       l'alerte est levée et les rappels s'arrêtent.
 
 Délais par défaut alignés sur le protocole Euro NCAP 2026 « Child Presence
 Detection » : premier avertissement moins de 15 s après le verrouillage, escalade
@@ -135,6 +137,21 @@ class MachineOubli:
         else:
             self._c = _Chrono()
             self._aller(Etat.VEILLE, "rien à signaler" + (f" : {detail}" if detail else ""))
+
+    def acquitter(self) -> list[Action]:
+        """Acquittement à distance (bouton « Je m'en occupe » de la notification) : l'alerte
+        est levée et les rappels s'arrêtent sans attendre le retour du conducteur.
+
+        Retour en VEILLE et non en OCCUPÉ : appuyer sur le bouton depuis le téléphone ne
+        prouve pas que quelqu'un est au véhicule. En veille, un cycle complet (montée,
+        départ, analyse) reste possible, et les chronos repartent de zéro."""
+        if self.etat is not Etat.ALERTE:
+            return []
+        self._reinit_alerte()
+        self._noter("acquittement", "pris en charge à distance")
+        self._c = _Chrono()
+        self._aller(Etat.VEILLE, "alerte acquittée à distance")
+        return [Action.ACQUITTER]
 
     # ---- observations ------------------------------------------------------
     def observer(self, adulte_present: bool) -> list[Action]:
@@ -265,6 +282,7 @@ class Superviseur:
     _pilotage: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _generation: int = field(default=0, init=False, repr=False)
     _derniere_alerte: Any = field(default=None, init=False, repr=False)
+    _motif_acquittement: str = field(default="acquittement", init=False, repr=False)
     _vu: int = field(default=0, init=False, repr=False)
     _en_attente: list = field(default_factory=list, init=False, repr=False)
 
@@ -310,6 +328,19 @@ class Superviseur:
         with self._lock:
             self._en_attente.extend(self.machine.verrouiller())
             self._publier()
+
+    def acquitter(self) -> bool:
+        """Acquittement à distance depuis la notification ntfy. Comme `verrouiller`, l'action
+        est déposée et exécutée par le thread de surveillance. Renvoie False s'il n'y a pas
+        d'alerte en cours (l'appelant HTTP en fait un 409)."""
+        with self._lock:
+            actions = self.machine.acquitter()
+            if not actions:
+                return False
+            self._motif_acquittement = "acquittement_distant"
+            self._en_attente.extend(actions)
+            self._publier()
+        return True
 
     @property
     def erreur(self) -> str:
@@ -361,9 +392,13 @@ class Superviseur:
                 self._analyser(gen)
             elif a is Action.RAPPELER and self._derniere_alerte is not None:
                 b.notifier(self._derniere_alerte, self.dernier_resultat or {}, "rappel")
-            elif a is Action.ACQUITTER and self._derniere_alerte is not None:
-                b.notifier(self._derniere_alerte, self.dernier_resultat or {}, "acquittement")
-                self._derniere_alerte = None
+            elif a is Action.ACQUITTER:
+                # « le conducteur est revenu » ou « pris en charge à distance » : le motif est
+                # consommé, un acquittement suivant repart du cas par défaut
+                motif, self._motif_acquittement = self._motif_acquittement, "acquittement"
+                if self._derniere_alerte is not None:
+                    b.notifier(self._derniere_alerte, self.dernier_resultat or {}, motif)
+                    self._derniere_alerte = None
 
     def _analyser(self, gen: int) -> None:
         """Analyse → décision → verdict. Quoi qu'il arrive, la machine sort de ANALYSE :
