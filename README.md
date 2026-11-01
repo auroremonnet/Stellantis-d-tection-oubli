@@ -62,7 +62,9 @@ Notification push via [ntfy.sh](https://ntfy.sh) (gratuit, sans compte) avec l'i
    - variable d'environnement `CARE_NTFY_TOPIC` ;
    - fichier `config.local.json` (ignoré par git), fusionné par-dessus `config.json`, par ex.
      `{"alertes": {"topic": "care-g2-xxxxxxxx"}}`.
-2. Tester sans caméra : `python test_alerte.py`.
+2. Tester sans caméra : `python test_alerte.py` — il lit le topic aux mêmes endroits et
+   dans le même ordre que le dashboard. Tant que le topic de `config.json` n'est pas
+   remplacé, **aucune notification ne part** et le message d'erreur le dit.
 
 Règle (une seule, dans `care/decision.py`) :
 

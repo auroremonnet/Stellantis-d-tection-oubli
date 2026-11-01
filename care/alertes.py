@@ -6,7 +6,9 @@ Reçoit des `Alerte` déjà décidées (care/decision.py) et se charge de l'envo
       essai à l'autre. Jamais pour une alerte critique (enfant, animal) ; les rappels
       d'escalade passent outre et la levée d'alerte remet le compteur à zéro ;
     - priorité ntfy « urgent » pour le critique (sonne même en mode silencieux sur Android) ;
-    - l'envoi part dans un thread : une panne réseau ne bloque jamais le banc.
+    - l'envoi part dans un thread : une panne réseau ne bloque jamais le banc ;
+    - garde-fou : rien ne part tant que le topic n'a pas été remplacé (le dépôt est public,
+      le vrai topic vit dans config.local.json ou dans CARE_NTFY_TOPIC).
 
 Les libellés surveillés sont les libellés français du détecteur (« téléphone »,
 « portefeuille », « clés »…), indépendants du moteur (COCO, YOLOE ou modèle entraîné).
@@ -19,9 +21,13 @@ import time
 import cv2
 import requests
 
+# Un topic qui contient ce mot n'a pas été configuré : on refuse d'envoyer (sinon la
+# notification part sur un topic public que n'importe qui peut lire ou alimenter).
+SENTINELLE_TOPIC = "CHANGEMOI"
+
 DEFAUTS = {
     "actif": True,
-    "topic": "care-stellantis-g2-CHANGEMOI",
+    "topic": "CHANGEMOI-voir-config.local.json",
     "serveur": "https://ntfy.sh",
     "classes_surveillees": None,      # None = tous les objets de valeur du détecteur
     "alerter_objet_inconnu": True,    # zone nouvelle non reconnue → alerte quand même
@@ -85,6 +91,13 @@ class Alerteur:
                 tags="rotating_light,oncoming_automobile") -> bool:
         """Envoi synchrone vers ntfy ; renvoie True si la notification est partie.
         Titre/message/priorité en query params (les headers HTTP cassent les accents)."""
+        if SENTINELLE_TOPIC in self.topic.upper():
+            self.derniere_erreur = (
+                f"topic ntfy non configuré ({self.topic!r}) : définir \"alertes\": "
+                '{"topic": "..."} dans config.local.json (hors dépôt) ou la variable '
+                "d'environnement CARE_NTFY_TOPIC")
+            print(f"[alertes] envoi annulé — {self.derniere_erreur}")
+            return False
         corps = b""
         params = {"title": titre, "message": message, "priority": priorite, "tags": tags}
         if image is not None:

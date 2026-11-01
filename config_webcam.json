@@ -117,7 +117,7 @@
   "alertes": {
     "actif": true,
     "en_demo": false,
-    "topic": "stellantis-g2-8f3k2",
+    "topic": "CHANGEMOI-voir-config.local.json",
     "classes_surveillees": [
       "téléphone",
       "ordinateur",
