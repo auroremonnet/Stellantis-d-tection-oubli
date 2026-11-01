@@ -67,6 +67,11 @@ Choix de conception, chacun motivé par un cas réel du banc :
   l'analyse lui-même : il dépose la demande, que le thread de surveillance exécute. Chaque
   armement ouvre une session numérotée : un désarmement en pleine analyse rend la main
   immédiatement, et l'analyse en cours, une fois finie, ne peut plus rien modifier ni notifier.
+- **L'alerte peut être levée à distance.** La notification critique et les rappels portent
+  un bouton « Je m'en occupe » (action ntfy `http`) : un appui envoie un POST au banc, qui
+  lève l'alerte et arrête les rappels. La machine repasse alors en **veille**, et non en
+  « occupé » : appuyer sur le bouton depuis le téléphone ne prouve pas que quelqu'un est
+  au véhicule. Un cycle complet (montée, départ, analyse) reste donc possible ensuite.
 - **Rien ne bloque la machine.** Si l'analyse, la décision ou l'écriture du journal échoue
   (caméra débranchée, `essais.csv` ouvert dans Excel…), la machine revient en veille et
   l'erreur reste affichée dans le dashboard.
@@ -86,6 +91,35 @@ La machine ne connaît ni caméra, ni modèle, ni réseau : elle est testée sur
 (`tests/test_surveillance.py`), ce qui vérifie par exemple les 19 rappels en 20 minutes
 d'escalade en quelques millisecondes.
 
+## Acquittement à distance (bouton « Je m'en occupe »)
+
+Sans retour du conducteur, une alerte critique sonne toutes les minutes pendant 20 minutes.
+Le conducteur qui a vu la notification et part vers le véhicule doit pouvoir faire taire
+l'escalade depuis son téléphone, sans ouvrir le dashboard.
+
+```
+notification ntfy ──[Je m'en occupe]──▶ POST /api/surveillance/acquitter
+                                           │
+                     Superviseur.acquitter() dépose l'action ──▶ thread de surveillance
+                                           │
+             alerte levée · rappels stoppés · événement « acquittement » · retour en VEILLE
+                                           │
+                            notification « Alerte levée · pris en charge à distance »
+```
+
+- **L'URL du banc vient de la configuration** : `alertes.url_banc`, par ex.
+  `http://192.168.1.90:5000`. À mettre dans `config.local.json` (hors dépôt, l'IP est
+  propre au poste). **Sans `url_banc`, aucun bouton n'est ajouté aux notifications.**
+- Le téléphone appelle le banc **directement** : il doit être sur le même réseau que le PC
+  (et le pare-feu laisser passer le port 5000). Rien ne transite par ntfy.sh.
+- Le bouton n'est mis que sur les **alertes critiques** et les **rappels** : une alerte
+  objet n'escalade pas, il n'y a rien à faire taire.
+- Le bouton voyage dans l'en-tête HTTP `Actions` (ntfy ne documente pas `actions` en
+  paramètre d'URL), d'où un libellé volontairement sans accent : ce sont les accents qui
+  cassent les en-têtes, et c'est pour cela que titre et message passent, eux, en query params.
+- Comme le verrouillage, l'acquittement est **déposé** et exécuté par le thread de
+  surveillance : un seul exécutant, jamais deux actions en parallèle.
+
 ## Format des événements (`data/essais/evenements.jsonl`)
 
 Une ligne JSON par transition, pour l'application de suivi :
@@ -95,7 +129,9 @@ Une ligne JSON par transition, pour l'application de suivi :
  "detail": "alerte critique : présence humaine, source de chaleur", "source": "surveillance"}
 ```
 
-`type` ∈ `veille`, `occupe`, `sortie`, `analyse`, `alerte`, `rappel`, `inactif`.
+`type` ∈ `veille`, `occupe`, `sortie`, `analyse`, `alerte`, `rappel`, `acquittement`,
+`inactif`. Un acquittement à distance écrit deux lignes : `acquittement`
+(« pris en charge à distance ») puis `veille`.
 
 ## API
 
@@ -104,6 +140,7 @@ Une ligne JSON par transition, pour l'application de suivi :
 | GET | `/api/surveillance` | état courant, compte à rebours, dernier verdict, historique |
 | POST | `/api/surveillance/armer` | capture la référence puis arme ; corps : `scenario`, `variante`, `verite`, `commentaire`, `capturer_reference` |
 | POST | `/api/surveillance/verrouiller` | simule le verrouillage : analyse immédiate |
+| POST | `/api/surveillance/acquitter` | bouton « Je m'en occupe » de la notification : lève l'alerte et stoppe les rappels ; `409` s'il n'y a pas d'alerte en cours |
 | POST | `/api/surveillance/desarmer` | arrête la surveillance |
 | POST | `/api/surveillance/demo` | démo uniquement : `{"occupant": true/false}` |
 

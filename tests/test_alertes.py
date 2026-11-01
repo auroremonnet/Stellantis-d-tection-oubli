@@ -1,4 +1,4 @@
-"""Envoi ntfy : priorité, cooldown, rappels, robustesse réseau (requests simulé)."""
+"""Envoi ntfy : priorité, cooldown, rappels, bouton d'acquittement, réseau (requests simulé)."""
 import numpy as np
 import pytest
 
@@ -11,10 +11,10 @@ class FauxRequests:
     def __init__(self, echec=False):
         self.appels, self.echec = [], echec
 
-    def put(self, url, data, params, timeout):
+    def put(self, url, data, params, timeout, headers=None):
         if self.echec:
             raise ConnectionError("réseau coupé")
-        self.appels.append({"url": url, "data": data, "params": params})
+        self.appels.append({"url": url, "data": data, "params": params, "headers": headers})
 
         class R:
             def raise_for_status(self):
@@ -108,3 +108,58 @@ def test_topic_non_configure_ne_part_pas(faux):
     assert a.envoyer("CARE · Test", "message") is False   # appel direct (test_alerte.py)
     assert faux.appels == []
     assert "CARE_NTFY_TOPIC" in a.etat()["erreur"] and "config.local.json" in a.etat()["erreur"]
+
+
+# ---- bouton « Je m'en occupe » (action ntfy http) --------------------------------
+BOUTON = ("http, Je m'en occupe, http://banc.lan:5000/api/surveillance/acquitter, "
+          "method=POST, clear=true")
+
+
+def _entetes(faux, i=0):
+    return faux.appels[i]["headers"] or {}
+
+
+def test_bouton_sur_l_alerte_critique_et_sur_le_rappel(faux):
+    a = alerteur(url_banc="http://banc.lan:5000/")      # « / » final toléré
+    assert a.notifier(CRITIQUE)
+    assert _entetes(faux)["Actions"] == BOUTON
+    assert a.notifier(CRITIQUE, motif="rappel")
+    assert _entetes(faux, 1)["Actions"] == BOUTON
+
+
+def test_bouton_absent_sans_url_banc(faux):
+    a = alerteur()
+    assert a.notifier(CRITIQUE)
+    assert "Actions" not in _entetes(faux)
+
+
+def test_pas_de_bouton_sur_une_alerte_objet_ni_sur_un_acquittement(faux):
+    a = alerteur(url_banc="http://banc.lan:5000")
+    assert a.notifier(OBJET)                                   # objet : rien à prendre en charge
+    assert "Actions" not in _entetes(faux)
+    assert a.notifier(CRITIQUE, motif="acquittement")          # déjà levée
+    assert "Actions" not in _entetes(faux, 1)
+
+
+def test_bouton_envoye_en_ascii(faux):
+    """Le bouton part dans un en-tête HTTP : un accent le casserait (d'où le libellé ASCII)."""
+    a = alerteur(url_banc="http://banc.lan:5000")
+    a.notifier(CRITIQUE, motif="rappel")
+    _entetes(faux)["Actions"].encode("ascii")
+
+
+def test_acquittement_a_distance_titre_et_message(faux):
+    a = alerteur(url_banc="http://banc.lan:5000")
+    assert a.notifier(CRITIQUE, np.zeros((10, 10, 3), np.uint8), motif="acquittement_distant")
+    p = faux.appels[0]["params"]
+    assert p["title"] == "Alerte levée · pris en charge à distance"
+    assert "rappels sont arrêtés" in p["message"]
+    assert p["priority"] == "default" and "filename" not in p   # pas d'image
+    assert "Actions" not in _entetes(faux)
+
+
+def test_acquittement_a_distance_rearme_le_cooldown(faux):
+    a = alerteur(cooldown_s=60)
+    assert a.notifier(OBJET)
+    a.notifier(OBJET, motif="acquittement_distant")
+    assert a.notifier(OBJET)                                   # nouveau cycle possible

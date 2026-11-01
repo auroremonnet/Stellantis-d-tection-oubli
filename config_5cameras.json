@@ -133,6 +133,7 @@
     "actif": true,
     "en_demo": false,
     "topic": "CHANGEMOI-voir-config.local.json",
+    "url_banc": "",
     "classes_surveillees": [
       "téléphone",
       "ordinateur",

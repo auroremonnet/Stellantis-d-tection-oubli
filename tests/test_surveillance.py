@@ -129,6 +129,29 @@ def test_escalade_critique_90s_puis_chaque_minute(m, h):
     assert m.rappels == 2
 
 
+def test_acquittement_a_distance_leve_l_alerte_et_stoppe_les_rappels(m, h):
+    """Bouton « Je m'en occupe » : l'alerte tombe sans que le conducteur soit revenu."""
+    _alerte(m, h, "critique")
+    assert m.acquitter() == [Action.ACQUITTER]
+    assert m.etat is Etat.VEILLE and m.niveau_alerte is None and m.rappels == 0
+    assert observer_pendant(m, h, False, 300, pas=1.0) == []      # plus aucun rappel
+    assert [e.type for e in m.historique][-2:] == ["acquittement", "veille"]
+
+
+def test_acquittement_a_distance_sans_alerte_est_sans_effet(m, h):
+    assert m.acquitter() == [] and m.etat is Etat.VEILLE
+    monter(m, h)
+    assert m.acquitter() == [] and m.etat is Etat.OCCUPE
+
+
+def test_apres_acquittement_a_distance_un_nouveau_cycle_realerte(m, h):
+    """L'habitacle reste occupé : si le conducteur monte puis repart, l'analyse doit repartir."""
+    _alerte(m, h, "critique")
+    m.acquitter()
+    monter(m, h)
+    assert observer_pendant(m, h, False, 9) == [Action.ANALYSER]
+
+
 def test_escalade_s_arrete_apres_20_minutes(m, h):
     _alerte(m, h, "critique")
     actions = observer_pendant(m, h, False, 1300, pas=1.0)
@@ -330,5 +353,54 @@ def test_regression_journal_illisible_est_signale():
         sup.verrouiller()
         assert _attendre(lambda: "Excel" in sup.erreur)
         assert len(notifs) == 1                    # l'alerte est quand même partie
+    finally:
+        sup.desarmer()
+
+
+def test_superviseur_acquittement_a_distance():
+    """POST /api/surveillance/acquitter : notification « pris en charge à distance »,
+    événement journalisé, rappels stoppés, et 409 (False) s'il n'y a plus d'alerte."""
+    notifs, journal = [], []
+    b = Branchements(
+        presence_adulte=lambda: False,
+        analyser=lambda ctx: {"classes_vivant": ["bébé"]},
+        decider=lambda r: Alerte("critique", "t", "m", ("bébé",), priorite="urgent"),
+        notifier=lambda a, r, motif: notifs.append(motif),
+        journaliser=journal.append,
+    )
+    sup = Superviseur(MachineOubli(Parametres(delai_escalade_s=0.05, periode_rappel_s=0.05)),
+                      b, periode_s=0.01)
+    sup.armer()
+    try:
+        sup.verrouiller()
+        assert _attendre(lambda: sup.machine.etat is Etat.ALERTE)
+        assert sup.acquitter() is True
+        assert _attendre(lambda: "acquittement_distant" in notifs)
+        assert sup.machine.etat is Etat.VEILLE and sup.machine.niveau_alerte is None
+        assert "acquittement" in [e.type for e in journal]
+        assert sup.acquitter() is False               # plus d'alerte en cours → 409
+        envoyees = len(notifs)
+        time.sleep(0.2)                               # 4 périodes de rappel simulées
+        assert notifs[envoyees:] == []                # les rappels sont bien stoppés
+    finally:
+        sup.desarmer()
+
+
+def test_superviseur_acquittement_execute_par_le_thread_de_surveillance():
+    """Comme le verrouillage : la requête HTTP dépose l'action, le thread l'exécute."""
+    threads = []
+    b = Branchements(
+        presence_adulte=lambda: False,
+        analyser=lambda ctx: {"classes_vivant": ["bébé"]},
+        decider=lambda r: Alerte("critique", "t", "m", ("bébé",), priorite="urgent"),
+        notifier=lambda a, r, motif: threads.append((motif, threading.current_thread().name)),
+    )
+    sup = Superviseur(MachineOubli(), b, periode_s=0.01)
+    sup.armer()
+    try:
+        sup.verrouiller()
+        assert _attendre(lambda: sup.machine.etat is Etat.ALERTE)
+        sup.acquitter()
+        assert _attendre(lambda: ("acquittement_distant", "surveillance") in threads)
     finally:
         sup.desarmer()

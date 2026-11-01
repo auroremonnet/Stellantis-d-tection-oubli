@@ -303,6 +303,16 @@ def surveillance_verrouiller():
     return jsonify(SUPERVISEUR.instantane())
 
 
+@app.route("/api/surveillance/acquitter", methods=["POST"])
+def surveillance_acquitter():
+    """Bouton « Je m'en occupe » de la notification ntfy : lève l'alerte et stoppe les
+    rappels sans attendre le retour du conducteur. Appelé par le téléphone, qui doit donc
+    joindre le banc (alertes.url_banc, même réseau)."""
+    if not SUPERVISEUR.acquitter():
+        return jsonify({"erreur": "Aucune alerte en cours"}), 409
+    return jsonify(SUPERVISEUR.instantane())
+
+
 @app.route("/api/surveillance/demo", methods=["POST"])
 def surveillance_demo():
     """Mode démo uniquement : le conducteur monte (True) ou descend (False). En descendant,

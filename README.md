@@ -43,7 +43,10 @@ Plus besoin de cliquer sur « Lancer l'analyse » : le banc joue la scène comme
 5. **Alerte** : notification ntfy (urgente pour un enfant/animal), affichée avec la latence
    départ → verdict et l'objectif Euro NCAP (≤ 15 s). Sans retour du conducteur, l'alerte
    critique est **relancée à 90 s puis chaque minute** pendant 20 min. Le conducteur revient :
-   l'alerte est levée (et une notification « Alerte levée » part).
+   l'alerte est levée (et une notification « Alerte levée » part). La notification critique et
+   les rappels portent aussi un bouton **« Je m'en occupe »** qui lève l'alerte depuis le
+   téléphone, sans ouvrir le dashboard : renseigner `alertes.url_banc` (ex.
+   `http://192.168.1.90:5000`) dans `config.local.json`, téléphone sur le même réseau que le PC.
 
 Chaque cycle est journalisé comme un essai (`mode = auto`, colonnes `alerte` et
 `latence_alerte_s`) si une vérité terrain a été choisie. Les événements sont aussi écrits, une
