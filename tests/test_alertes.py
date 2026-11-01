@@ -29,12 +29,18 @@ def faux(monkeypatch):
     return f
 
 
+def alerteur(**cfg) -> Alerteur:
+    """Alerteur synchrone sur un topic configuré (le topic par défaut est volontairement
+    refusé par le garde-fou : voir test_topic_non_configure_ne_part_pas)."""
+    return Alerteur({"topic": "t-test", **cfg}, envoi_synchrone=True)
+
+
 OBJET = Alerte("objet", "CARE · Objet oublié", "Clés oubliées", ("clés",))
 CRITIQUE = Alerte("critique", "CARE · URGENT", "Bébé détecté", ("bébé",), priorite="urgent")
 
 
 def test_envoi_avec_image_et_priorite(faux):
-    a = Alerteur({"topic": "t-test"}, envoi_synchrone=True)
+    a = alerteur()
     assert a.notifier(CRITIQUE, np.zeros((40, 60, 3), np.uint8))
     p = faux.appels[0]
     assert p["url"] == "https://ntfy.sh/t-test"
@@ -43,7 +49,7 @@ def test_envoi_avec_image_et_priorite(faux):
 
 
 def test_cooldown_par_element(faux):
-    a = Alerteur({"cooldown_s": 60}, envoi_synchrone=True)
+    a = alerteur(cooldown_s=60)
     assert a.notifier(OBJET)
     assert not a.notifier(OBJET)                  # même objet, trop tôt
     assert a.notifier(OBJET, motif="rappel")      # l'escalade passe outre
@@ -52,20 +58,20 @@ def test_cooldown_par_element(faux):
 
 
 def test_acquittement_sans_image_priorite_normale(faux):
-    a = Alerteur({}, envoi_synchrone=True)
+    a = alerteur()
     a.notifier(CRITIQUE, np.zeros((10, 10, 3), np.uint8), motif="acquittement")
     p = faux.appels[0]["params"]
     assert p["priority"] == "default" and "filename" not in p and p["title"].startswith("Alerte levée")
 
 
 def test_coupe(faux):
-    assert not Alerteur({"actif": False}, envoi_synchrone=True).notifier(OBJET)
+    assert not alerteur(actif=False).notifier(OBJET)
     assert faux.appels == []
 
 
 def test_panne_reseau_ne_leve_pas(monkeypatch):
     monkeypatch.setattr(mod, "requests", FauxRequests(echec=True))
-    a = Alerteur({}, envoi_synchrone=True)
+    a = alerteur()
     assert a.notifier(OBJET) is False
     assert "réseau coupé" in a.etat()["erreur"]
 
@@ -80,7 +86,7 @@ def test_compatible_test_alerte_py(faux):
 def test_regression_critique_jamais_bloque_par_le_cooldown(faux):
     """Une alerte critique levée à tort (ex. enfant pris pour le conducteur) puis
     redéclenchée doit repartir immédiatement."""
-    a = Alerteur({"cooldown_s": 60}, envoi_synchrone=True)
+    a = alerteur(cooldown_s=60)
     assert a.notifier(CRITIQUE)
     assert a.notifier(CRITIQUE, motif="acquittement")
     assert a.notifier(CRITIQUE)
@@ -88,7 +94,17 @@ def test_regression_critique_jamais_bloque_par_le_cooldown(faux):
 
 
 def test_acquittement_rearme_le_cooldown_des_objets(faux):
-    a = Alerteur({"cooldown_s": 60}, envoi_synchrone=True)
+    a = alerteur(cooldown_s=60)
     assert a.notifier(OBJET)
     a.notifier(OBJET, motif="acquittement")
     assert a.notifier(OBJET)                       # nouveau cycle : l'objet peut réalerter
+
+
+def test_topic_non_configure_ne_part_pas(faux):
+    """Dépôt public : tant que le topic de config.json n'est pas remplacé (config.local.json
+    ou CARE_NTFY_TOPIC), aucune notification ne doit partir."""
+    a = Alerteur({}, envoi_synchrone=True)          # topic par défaut : « CHANGEMOI-... »
+    assert a.notifier(CRITIQUE) is False
+    assert a.envoyer("CARE · Test", "message") is False   # appel direct (test_alerte.py)
+    assert faux.appels == []
+    assert "CARE_NTFY_TOPIC" in a.etat()["erreur"] and "config.local.json" in a.etat()["erreur"]
