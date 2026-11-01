@@ -1,5 +1,10 @@
 .venv/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 data/demo/
 *.pt
 *.ts
+datasets/
+runs/
+data/essais/brutes/

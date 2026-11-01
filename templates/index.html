@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CARE · Détection d'oubli</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -62,6 +63,28 @@
           <button class="btn btn-link" type="button" id="btn-ref-del" hidden>Effacer</button>
         </div>
         <div class="ref-thumbs" id="ref-thumbs"></div>
+      </div>
+
+      <div class="card surv" id="surv">
+        <div class="card-head"><h2>Surveillance automatique</h2><span class="muted" id="surv-sous">désarmée</span></div>
+        <ol class="surv-etapes" id="surv-etapes" aria-label="État de la surveillance">
+          <li data-e="veille">Veille</li><li data-e="occupe">Occupé</li><li data-e="sortie">Sortie</li>
+          <li data-e="analyse">Analyse</li><li data-e="alerte">Alerte</li>
+        </ol>
+        <div class="surv-banniere" id="surv-banniere" hidden></div>
+        <p class="muted small" id="surv-aide">Habitacle vide, armer : la référence est capturée. Le conducteur
+          monte, pose ses affaires, descend : l'analyse part seule après le délai de sortie. Le scénario, la
+          variante et la vérité terrain du formulaire ci-dessous sont utilisés pour journaliser l'essai.</p>
+        <div class="surv-actions">
+          <button class="btn btn-secondary" type="button" id="btn-armer">Armer</button>
+          <button class="btn btn-secondary" type="button" id="btn-verrou" hidden title="Simule l'événement « véhicule verrouillé » : analyse immédiate">Verrouiller</button>
+          <button class="btn btn-link" type="button" id="btn-desarmer" hidden>Désarmer</button>
+        </div>
+        <div class="surv-actions" id="surv-demo" hidden>
+          <button class="btn btn-link" type="button" data-occupant="1">Démo : le conducteur monte</button>
+          <button class="btn btn-link" type="button" data-occupant="0">descend</button>
+        </div>
+        <ul class="surv-histo" id="surv-histo"></ul>
       </div>
 
       <form class="card" id="form-essai">
@@ -134,5 +157,6 @@
 <div id="tooltip" class="tooltip" hidden></div>
 <div id="lightbox" class="lightbox" hidden><img alt=""></div>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='surveillance.js') }}"></script>
 </body>
 </html>

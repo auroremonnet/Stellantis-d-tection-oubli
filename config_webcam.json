@@ -20,7 +20,7 @@
   "repetitions_cible": 10,
   "ratio_presence": 0.5,
   "detection": {
-    "moteur": "yoloe",
+    "moteur": "hybride",
     "modele": "yoloe-11s-seg.pt",
     "imgsz": 640,
     "confiance_vivant": 0.4,
@@ -48,7 +48,10 @@
       "headphones"
     ],
     "zoom_zones": true,
-    "alerte_zone_inconnue": true
+    "alerte_zone_inconnue": true,
+    "modele_custom": "modeles/care-v1.pt",
+    "confiance_custom": 0.35,
+    "hauteur_min_adulte": 0.35
   },
   "reference": {
     "iou_fixe": 0.5,
@@ -109,5 +112,40 @@
     "Nuit / faible lumière",
     "Contre-jour",
     "Occultation partielle"
-  ]
+  ],
+  "alertes": {
+    "actif": true,
+    "en_demo": false,
+    "topic": "stellantis-g2-8f3k2",
+    "classes_surveillees": [
+      "téléphone",
+      "ordinateur",
+      "tablette",
+      "sac à main",
+      "sac à dos",
+      "sac",
+      "valise",
+      "portefeuille",
+      "clés",
+      "clés de voiture",
+      "carte bancaire",
+      "lunettes",
+      "montre",
+      "casque audio"
+    ],
+    "alerter_objet_inconnu": true,
+    "cooldown_s": 60
+  },
+  "surveillance": {
+    "periode_s": 0.5,
+    "confirmation_presence_s": 1.5,
+    "delai_sortie_s": 8,
+    "delai_escalade_s": 90,
+    "periode_rappel_s": 60,
+    "duree_rappels_s": 1200,
+    "niveaux_escalade": [
+      "critique"
+    ]
+  },
+  "sauver_images_brutes": true
 }

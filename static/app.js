@@ -43,10 +43,11 @@ async function rafraichirEtat() {
   try {
     const e = await (await fetch("/api/etat")).json();
     $("#badge-demo").hidden = !e.demo;
-    const moteur = e.modele.moteur === "yoloe" ? "YOLOE (prompts)" : "COCO";
-    pill($("#st-modele"), e.modele.pret ? "ok" : e.modele.erreur ? "ko" : "wait",
-      e.modele.pret ? `${moteur} · ${e.modele.nom}` : e.modele.erreur ? "Modèle en erreur" : "Chargement du modèle…");
-    $("#st-modele").title = e.modele.erreur || "";
+    const moteur = { yoloe: "YOLOE (prompts)", coco: "COCO",
+      hybride: e.modele.custom ? "Hybride · YOLOE + modèle entraîné" : "YOLOE (modèle entraîné absent)" }[e.modele.moteur] || e.modele.moteur;
+    pill($("#st-modele"), e.modele.pret ? (e.modele.avertissement ? "wait" : "ok") : e.modele.erreur ? "ko" : "wait",
+      e.modele.pret ? moteur : e.modele.erreur ? "Modèle en erreur" : "Chargement du modèle…");
+    $("#st-modele").title = e.modele.erreur || e.modele.avertissement || e.modele.nom;
     const n = e.rgb.filter((c) => c.ok).length;
     pill($("#st-rgb"), n === e.rgb.length ? "ok" : n ? "wait" : "ko", `Caméras ${n}/${e.rgb.length}`);
     afficherReference(e.reference, e.demo);

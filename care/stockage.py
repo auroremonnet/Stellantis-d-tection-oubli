@@ -5,7 +5,8 @@ import threading
 
 COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", "vivant_thermique",
             "classes_vivant", "objets", "cameras_vivant", "pixels_chauds", "tmax", "latence_s",
-            "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee"]
+            "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee",
+            "mode", "alerte", "latence_alerte_s"]
 
 
 def _bool(v):
@@ -58,10 +59,7 @@ class Journal:
             for k in ("classes_vivant", "objets", "cameras_vivant"):
                 if isinstance(row[k], list):
                     row[k] = ", ".join(row[k])
-            if row["pixels_chauds"] is None:
-                row["pixels_chauds"] = ""
-            if row["tmax"] is None:
-                row["tmax"] = ""
+            row = {k: ("" if v is None else v) for k, v in row.items()}
             csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";").writerow(row)
 
     def supprimer(self, eid):

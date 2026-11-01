@@ -163,7 +163,11 @@ class SourceDemo(Source):
         # banquette
         cv2.rectangle(img, (40, 200), (600, 340), (78, 70, 64), -1)
         cv2.rectangle(img, (40, 120), (600, 210), (90, 82, 75), -1)
-        if self.scene == "vivant":
+        if self.scene == "conducteur":  # adulte au premier plan (surveillance automatique)
+            x = int(330 + 25 * math.sin(t * 0.6 + self.index))
+            cv2.circle(img, (x, 95), 48, (150, 170, 205), -1)
+            cv2.ellipse(img, (x, 260), (110, 120), 0, 0, 360, (95, 75, 60), -1)
+        elif self.scene == "vivant":
             x = int(320 + 40 * math.sin(t * 0.8 + self.index))
             cv2.circle(img, (x, 190), 34, (150, 170, 205), -1)
             cv2.ellipse(img, (x, 270), (60, 50), 0, 0, 360, (120, 90, 160), -1)
@@ -188,7 +192,7 @@ class SourceThermiqueDemo(SourceThermique):
         time.sleep(1 / 9)
         yy, xx = np.mgrid[0:60, 0:80]
         temp = np.full((60, 80), 22.0) + np.random.randn(60, 80) * 0.3
-        if self.scene == "vivant":
+        if self.scene in ("vivant", "conducteur"):
             cx = 40 + 6 * math.sin(time.time() * 0.8)
             temp += 13 * np.exp(-(((xx - cx) / 9) ** 2 + ((yy - 32) / 12) ** 2))
         return True, ((temp + 273.15) * 100).astype(np.uint16)

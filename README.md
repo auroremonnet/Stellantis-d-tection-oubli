@@ -30,6 +30,45 @@ Chaque essai enregistre **séparément** le verdict RGB et le verdict thermique.
 | A1 | Le détecteur voit une personne, un enfant, un chat ou un chien sur au moins une caméra |
 | A2 | A1 **ou** la thermique voit une zone chaude (fusion OU, qui maximise le rappel) |
 
+## Surveillance automatique : simuler l'oubli de bout en bout
+
+Plus besoin de cliquer sur « Lancer l'analyse » : le banc joue la scène comme une vraie voiture.
+
+1. Habitacle vide, choisir scénario / variante / vérité terrain dans le formulaire, puis **Armer** :
+   la référence « habitacle vide » est capturée à cet instant.
+2. Le conducteur monte (adulte vu ≥ 1,5 s → **Occupé**), installe la poupée ou pose ses affaires.
+3. Il descend : plus aucun adulte vu → **Sortie**, compte à rebours de 8 s affiché en grand.
+   Bouton **Verrouiller** : simule le verrouillage des portes, l'analyse part immédiatement.
+4. **Analyse** complète (toutes caméras, référence, zoom, thermique), puis verdict.
+5. **Alerte** : notification ntfy (urgente pour un enfant/animal), affichée avec la latence
+   départ → verdict et l'objectif Euro NCAP (≤ 15 s). Sans retour du conducteur, l'alerte
+   critique est **relancée à 90 s puis chaque minute** pendant 20 min. Le conducteur revient :
+   l'alerte est levée (et une notification « Alerte levée » part).
+
+Chaque cycle est journalisé comme un essai (`mode = auto`, colonnes `alerte` et
+`latence_alerte_s`) si une vérité terrain a été choisie. Les événements sont aussi écrits, une
+ligne JSON par transition, dans `data/essais/evenements.jsonl` (pour l'application de suivi).
+Délais réglables dans `config.json` → `surveillance`. Détails : [`docs/surveillance.md`](docs/surveillance.md).
+
+En démo, les boutons « Démo : le conducteur monte / descend » remplacent le vrai conducteur.
+
+## Alertes téléphone
+
+Notification push via [ntfy.sh](https://ntfy.sh) (gratuit, sans compte) avec l'image annotée :
+
+1. Installer l'appli **ntfy** (Android / iOS) et s'abonner au topic `alertes.topic` de
+   `config.json`. **Changer la valeur par défaut** : le topic fait office de mot de passe.
+2. Tester sans caméra : `python test_alerte.py`.
+
+Règle (une seule, dans `care/decision.py`) :
+
+| Niveau | Quand | Notification |
+|---|---|---|
+| **Critique** | enfant, bébé, chat, chien (RGB) ou source de chaleur (thermique) ; en surveillance, toute « présence humaine » après le départ du conducteur | priorité *urgent*, rappels |
+| **Objet** | objet de `alertes.classes_surveillees` ou zone nouvelle non identifiée, sans adulte à bord | priorité *high*, cooldown 60 s par objet |
+
+Pas de notification réelle en `--demo` (sauf `"en_demo": true`).
+
 ## Reconnaître les objets de valeur (téléphone, clés, portefeuille, carte, sac…)
 
 Le détecteur est **YOLOE**, un modèle à vocabulaire ouvert : on lui donne une liste de mots
@@ -53,6 +92,23 @@ téléphone, la console à un sac. D'où la **référence « habitacle vide »**
 
 Détails, pistes testées et jeux de données : [`docs/recherche-detection-objets.md`](docs/recherche-detection-objets.md).
 
+### Moteur hybride : YOLOE + notre modèle entraîné
+
+YOLOE rate encore les petits objets posés à plat (clés dans la console, téléphone sur la
+banquette). Le moteur par défaut est donc `"hybride"` : YOLOE **et** un YOLO26 entraîné sur nos
+classes (`baby`, `keys`, `wallet`, `card`) tournent sur chaque image ; les doublons entre les
+deux sont fusionnés, le modèle entraîné étant prioritaire sur ses propres classes.
+
+Tant que `modeles/care-v1.pt` n'existe pas, le banc tourne en YOLOE seul (pastille orange dans le
+dashboard). Pour le produire : [`entrainement/README.md`](entrainement/README.md) (Colab, ~30 min).
+Pour mesurer l'apport réel sur un jeu de test annoté :
+
+```
+python outils/evaluer.py --donnees datasets/care-oubli-v1/data.yaml --moteurs yoloe custom hybride
+```
+
+→ tableau précision / rappel par classe et par moteur dans `rapports/`, prêt pour le livrable.
+
 ## Calibrer la thermique
 
 Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le nombre de pixels chauds et la T° max.
@@ -65,6 +121,9 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 - `data/essais/essais.csv` : un essai par ligne, s'ouvre directement dans Excel (bouton **Exporter CSV**).
 - `data/essais/images/` : mosaïque RGB annotée et image thermique de chaque essai, à utiliser comme preuves pour le L3.
 - `data/essais/reference/` : images de référence « habitacle vide » et détections fixes associées.
+- `data/essais/brutes/` : images **sans annotation** de chaque caméra, à chaque essai — à verser
+  dans Roboflow pour enrichir le jeu d'entraînement avec nos propres scènes.
+- `data/essais/evenements.jsonl` : événements de la surveillance automatique.
 - Les essais du mode démo sont rangés à part, dans `data/demo/`.
 
 ## Structure
@@ -75,8 +134,25 @@ config.json          caméras, détection (moteur, prompts, seuils), référence
 config_5cameras.json configuration complète 4 RGB + thermique (à recopier dans config.json le jour J)
 lister_cameras.py    trouver les index des caméras
 care/cameras.py      acquisition (1 thread par caméra) + sources démo
-care/detecteur.py    YOLOE (prompts) ou YOLO COCO, zoom sur zones nouvelles, seuil thermique, fusion
+care/detecteur.py    YOLOE / COCO / hybride, zoom sur zones nouvelles, seuil thermique, fusion
 care/reference.py    référence habitacle vide : détections fixes à ignorer, zones nouvelles
+care/surveillance.py machine à états de la surveillance automatique + boucle de fond
+care/decision.py     règle d'alerte unique (critique / objet / rien)
+care/alertes.py      notifications ntfy (cooldown, rappels, levée d'alerte)
+care/metriques_detection.py  précision / rappel boîte par boîte, tous moteurs
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
+entrainement/        entraînement du modèle (script + notebook Colab)
+outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté
+tests/               tests automatiques (pytest)
 templates/, static/  dashboard
 ```
+
+## Tests
+
+```
+pip install pytest
+python -m pytest
+```
+
+Les tests n'ont besoin ni de caméra ni de modèle : la machine à états tourne sur une horloge
+simulée (délais Euro NCAP vérifiés en quelques millisecondes), l'envoi ntfy est simulé.

@@ -1,10 +1,14 @@
 """Analyse d'un essai : détection RGB, thermique (seuil de chaleur), fusion.
 
-Deux moteurs RGB, choisis dans config.json (`detection.moteur`) :
-    "yoloe" : YOLOE, détecteur à vocabulaire ouvert. On lui donne une liste de
-              mots (prompts) : "cell phone", "car key", "wallet"… Pas d'entraînement.
-    "coco"  : YOLOv8 classique, limité aux 80 classes COCO (pas de clés, pas de
-              portefeuille, pas de carte). Gardé pour comparaison.
+Trois moteurs RGB, choisis dans config.json (`detection.moteur`) :
+    "yoloe"   : YOLOE, détecteur à vocabulaire ouvert. On lui donne une liste de
+                mots (prompts) : "cell phone", "car key", "wallet"… Pas d'entraînement.
+    "coco"    : YOLOv8 classique, limité aux 80 classes COCO (pas de clés, pas de
+                portefeuille, pas de carte). Gardé pour comparaison.
+    "hybride" : YOLOE + notre modèle entraîné (`detection.modele_custom`, classes
+                baby / keys / wallet / card). Les deux tournent sur chaque image et
+                les doublons (même libellé, boîtes qui se recouvrent) sont fusionnés.
+                Si le modèle entraîné est absent, on retombe sur YOLOE seul.
 
 Si une référence « habitacle vide » a été capturée (care/reference.py) :
     - les détections déjà présentes au même endroit sur la référence sont ignorées
@@ -24,7 +28,7 @@ import time
 import cv2
 import numpy as np
 
-from .reference import recouvrement
+from .reference import iou, recouvrement
 
 # ---- Moteur COCO (yolov8n/s/m/l.pt) --------------------------------------
 COCO_VIVANT = {0: "personne", 15: "chat", 16: "chien"}
@@ -41,7 +45,10 @@ LIBELLES = {
     "handbag": "sac à main", "backpack": "sac à dos", "bag": "sac", "shopping bag": "sac",
     "laptop": "ordinateur", "tablet": "tablette", "glasses": "lunettes", "watch": "montre",
     "headphones": "casque audio", "suitcase": "valise",
+    "card": "carte bancaire",  # classes du modèle entraîné (Roboflow care-oubli)
 }
+# Type de chaque classe du modèle entraîné (surchargeable : detection.classes_custom)
+CLASSES_CUSTOM = {"baby": "vivant", "keys": "valeur", "wallet": "valeur", "card": "valeur"}
 INCONNU = "objet non identifié"
 
 COULEUR = {"vivant": (60, 60, 230), "valeur": (60, 200, 60), "fixe": (150, 150, 150), "zone": (0, 165, 255)}
@@ -53,12 +60,45 @@ def _ascii(s):
     return str(s).translate(_ACCENTS)
 
 
+def fusionner(dets, libelle=lambda n: n, iou_min=0.5, prioritaire="custom"):
+    """Supprime les doublons ENTRE moteurs : une détection est écartée si une détection
+    plus confiante d'un AUTRE moteur, de même libellé, recouvre sa boîte (IoU >= iou_min).
+    Le libellé sert de clé commune (« credit card » de YOLOE et « card » du modèle entraîné
+    donnent tous deux « carte bancaire »). Deux détections d'un même moteur ne sont jamais
+    fusionnées ici : son propre NMS l'a déjà fait, et deux objets voisins (deux
+    personnes côte à côte, un trousseau sur un portefeuille) doivent rester distincts.
+
+    En cas de doublon, le moteur `prioritaire` (le modèle entraîné, spécialiste de nos
+    classes et de nos conventions de boîtes) l'emporte, quelle que soit la confiance :
+    les scores de deux modèles différents ne sont pas comparables entre eux."""
+    gardees = []
+    for d in sorted(dets, key=lambda d: (d.get("source") != prioritaire, -d["conf"])):
+        if not any(g.get("source") != d.get("source")
+                   and libelle(g["nom"]) == libelle(d["nom"])
+                   and iou(g["boite"], d["boite"]) >= iou_min for g in gardees):
+            gardees.append(d)
+    return gardees
+
+
+def est_adulte(det, hauteur_image, hauteur_min=0.35):
+    """Un adulte à bord = une « person » dont la boîte occupe une bonne part de la hauteur
+    de l'image. Les petits gabarits (enfant dans un siège, bébé) ne comptent pas : ils ne
+    doivent jamais empêcher la surveillance de constater le départ du conducteur."""
+    if det["nom"] != "person" or det["type"] != "vivant":
+        return False
+    return (det["boite"][3] - det["boite"][1]) >= hauteur_min * hauteur_image
+
+
 class Detecteur:
     def __init__(self, cfg):
         self.cfg = cfg
         d = cfg.get("detection", {})
         self.moteur = d.get("moteur", "coco")
         self.modele = d.get("modele", cfg.get("modele", "yolov8n.pt"))
+        self.moteur_base = "coco" if self.moteur == "coco" else "yoloe"
+        if self.moteur == "coco" and "yoloe" in str(self.modele):
+            # le champ `modele` désigne les poids YOLOE : COCO a ses propres poids
+            self.modele = d.get("modele_coco", "yolov8m.pt")
         self.prompts_vivant = d.get("prompts_vivant", PROMPTS_VIVANT)
         self.prompts_valeur = d.get("prompts_valeur", PROMPTS_VALEUR)
         self.libelles = {**LIBELLES, **d.get("libelles", {})}
@@ -67,15 +107,24 @@ class Detecteur:
         self.imgsz = d.get("imgsz", 640)
         self.zoom_zones = d.get("zoom_zones", True)
         self.alerte_inconnu = d.get("alerte_zone_inconnue", True)
+        self.modele_custom = d.get("modele_custom", "modeles/care-v1.pt")
+        self.classes_custom = {**CLASSES_CUSTOM, **d.get("classes_custom", {})}
+        self.conf_custom = d.get("confiance_custom", 0.35)
+        self.hauteur_adulte = d.get("hauteur_min_adulte", 0.35)
         self.model = None
+        self.custom = None          # modèle entraîné (moteur hybride)
         self.erreur = ""
-        self._lock = threading.Lock()
+        self.avertissement = ""
+        self._lock = threading.Lock()          # un essai à la fois
+        self._lock_inference = threading.Lock()  # un appel au modèle à la fois (surveillance + essai)
         threading.Thread(target=self._charger, daemon=True).start()
 
     # ---- chargement ------------------------------------------------------
     def _charger(self):
         try:
-            if self.moteur == "yoloe":
+            if self.moteur == "hybride":
+                self._charger_custom()
+            if self.moteur in ("yoloe", "hybride"):
                 from ultralytics import YOLOE
                 m = YOLOE(self.modele)
                 noms = list(self.prompts_vivant) + list(self.prompts_valeur)
@@ -94,6 +143,22 @@ class Detecteur:
         except Exception as e:  # noqa: BLE001
             self.erreur = str(e)
 
+    def _charger_custom(self):
+        import os
+
+        from ultralytics import YOLO
+        if not os.path.exists(self.modele_custom):
+            self.avertissement = (f"Modèle entraîné introuvable ({self.modele_custom}) : "
+                                  "YOLOE seul. Voir entrainement/README.md")
+            return
+        m = YOLO(self.modele_custom)
+        inconnues = sorted(set(m.names.values()) - set(self.classes_custom))
+        if inconnues:
+            self.avertissement = f"Classes du modèle entraîné ignorées : {', '.join(inconnues)}"
+        self._noms_custom = m.names
+        m(np.zeros((360, 640, 3), np.uint8), verbose=False, imgsz=self.imgsz)
+        self.custom = m
+
     @property
     def pret(self):
         return self.model is not None
@@ -108,7 +173,35 @@ class Detecteur:
         kw = {"conf": min(seuils.values()), "verbose": False, "imgsz": self.imgsz}
         if self._classes:
             kw["classes"] = self._classes
-        res = self.model(frames, **kw)
+        with self._lock_inference:
+            res = self.model(frames, **kw)
+            res_custom = None
+            if self.custom is not None:
+                res_custom = self.custom(frames, conf=self.conf_custom * facteur_conf,
+                                         verbose=False, imgsz=self.imgsz)
+        out = self._lire(res, seuils)
+        if res_custom is not None:
+            for dets, r in zip(out, res_custom):
+                for c, p, b in zip(r.boxes.cls.tolist(), r.boxes.conf.tolist(), r.boxes.xyxy.tolist()):
+                    nom = self._noms_custom[int(c)]
+                    t = self.classes_custom.get(nom)
+                    if t is not None:
+                        dets.append({"nom": nom, "type": t, "conf": float(p),
+                                     "boite": [int(v) for v in b], "source": "custom"})
+            out = [fusionner(dets, self.libelle) for dets in out]
+        return out
+
+    def presence_adulte(self, sources):
+        """Vrai si un adulte est vu sur au moins une caméra (surveillance automatique)."""
+        frames = [f for f in (s.derniere() for s in sources) if f is not None]
+        if not frames or not self.pret:
+            return False
+        for f, dets in zip(frames, self.detecter(frames)):
+            if any(est_adulte(d, f.shape[0], self.hauteur_adulte) for d in dets):
+                return True
+        return False
+
+    def _lire(self, res, seuils):
         out = []
         for r in res:
             dets = []
@@ -119,7 +212,8 @@ class Detecteur:
                     continue
                 if p < seuils[t]:
                     continue
-                dets.append({"nom": self._noms[c], "type": t, "conf": float(p), "boite": [int(v) for v in b]})
+                dets.append({"nom": self._noms[c], "type": t, "conf": float(p),
+                             "boite": [int(v) for v in b], "source": self.moteur_base})
             out.append(dets)
         return out
 
@@ -195,7 +289,7 @@ class Detecteur:
             cams_vivant = sorted(sid for sid, pc in par_cam.items() if pc["vivant"] & noms_vivant)
             nb_zones, inconnu, lumiere, annotees = 0, False, False, []
 
-            for sid, pc in par_cam.items():
+            for pc in par_cam.values():
                 f = pc["frame"]
                 if f is None:
                     continue
@@ -250,7 +344,8 @@ class Detecteur:
         for d in gardees:
             x1, y1, x2, y2 = d["boite"]
             col = COULEUR.get(d["type"], COULEUR["valeur"])
-            txt = _ascii(self.libelle(d["nom"]) + ("" if d["conf"] is None else f" {d['conf']:.2f}") + (" zoom" if d.get("zoom") else ""))
+            conf = "" if d["conf"] is None else f" {d['conf']:.2f}"
+            txt = _ascii(self.libelle(d["nom"]) + conf + (" zoom" if d.get("zoom") else ""))
             cv2.rectangle(img, (x1, y1), (x2, y2), col, 2)
             (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 6, max(th + 8, y1)), col, -1)
@@ -265,8 +360,12 @@ class DetecteurDemo(Detecteur):
     def _charger(self):
         self.model = "demo"
 
-    def detecter(self, frames):
+    def detecter(self, frames, facteur_conf=1.0):
         return [[] for _ in frames]
+
+    def presence_adulte(self, sources):
+        """En démo, le conducteur est « à bord » quand la scène simulée le montre."""
+        return any(getattr(s, "scene", "") == "conducteur" for s in sources)
 
     def analyser(self, rgb, thermique, verite=None, reference=None):
         t0 = time.time()
