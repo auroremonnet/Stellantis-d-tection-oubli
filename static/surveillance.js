@@ -3,8 +3,8 @@
 (() => {
   const ORDRE = ["veille", "occupe", "sortie", "analyse", "alerte"];
   const OBJECTIF_NCAP_S = 15; // Euro NCAP 2026 : avertissement < 15 s après verrouillage
-  const ICONES = { veille: "○", occupe: "●", sortie: "→", analyse: "◎", alerte: "!", inactif: "■", rappel: "↻" };
-  let actif = false, dernierId = null, enCours = false;
+  const ICONES = { veille: "○", occupe: "●", sortie: "→", analyse: "◎", alerte: "!", inactif: "■", rappel: "↻", acquittement: "✓" };
+  let actif = false, dernierId = null, enCours = false, lienSuivi = "";
 
   const post = async (url, corps) => {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) });
@@ -102,8 +102,26 @@
     if (b) action(b, () => post("/api/surveillance/demo", { occupant: b.dataset.occupant === "1" }));
   };
 
-  // Le bouton démo n'existe qu'en mode démo
-  fetch("/api/etat").then((r) => r.json()).then((e) => { $("#surv-demo").hidden = !e.demo; }).catch(() => {});
+  // Page de suivi à scanner depuis le téléphone (l'URL vient de alertes.url_banc)
+  $("#btn-suivi").onclick = () => {
+    const panneau = $("#surv-qr");
+    panneau.hidden = !panneau.hidden;
+    if (panneau.hidden) return;
+    const img = $("#surv-qr-img"), lien = $("#surv-qr-url");
+    img.hidden = !lienSuivi;
+    if (lienSuivi) img.src = "/suivi/qr.png";
+    lien.textContent = lienSuivi;
+    lien.href = lienSuivi || "#";
+    $("#surv-qr-aide").textContent = lienSuivi
+      ? "Scanner avec le téléphone, qui doit être sur le même réseau Wi-Fi que ce PC."
+      : "Renseigner alertes.url_banc (ex. http://192.168.1.90:5000) dans config.local.json pour afficher le QR code.";
+  };
+
+  // Le bouton démo n'existe qu'en mode démo ; le lien de suivi vient de la config des alertes
+  fetch("/api/etat").then((r) => r.json()).then((e) => {
+    $("#surv-demo").hidden = !e.demo;
+    lienSuivi = (e.alertes && e.alertes.suivi) || "";
+  }).catch(() => {});
 
   // Rythme : rapide quand la surveillance tourne (compte à rebours), lent sinon
   (function boucle() {

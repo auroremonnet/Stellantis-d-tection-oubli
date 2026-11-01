@@ -45,8 +45,11 @@ Plus besoin de cliquer sur « Lancer l'analyse » : le banc joue la scène comme
    critique est **relancée à 90 s puis chaque minute** pendant 20 min. Le conducteur revient :
    l'alerte est levée (et une notification « Alerte levée » part). La notification critique et
    les rappels portent aussi un bouton **« Je m'en occupe »** qui lève l'alerte depuis le
-   téléphone, sans ouvrir le dashboard : renseigner `alertes.url_banc` (ex.
-   `http://192.168.1.90:5000`) dans `config.local.json`, téléphone sur le même réseau que le PC.
+   téléphone, sans ouvrir le dashboard, et un appui sur la notification elle-même ouvre la
+   **page de suivi** `http://<IP-du-PC>:5000/suivi` : état en gros, compte à rebours, dernière
+   alerte avec son image, acquittement et derniers événements. Renseigner `alertes.url_banc`
+   (ex. `http://192.168.1.90:5000`) dans `config.local.json`, téléphone sur le même réseau
+   que le PC.
 
 Chaque cycle est journalisé comme un essai (`mode = auto`, colonnes `alerte` et
 `latence_alerte_s`) si une vérité terrain a été choisie. Les événements sont aussi écrits, une
@@ -156,7 +159,7 @@ care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, préci
 entrainement/        entraînement du modèle (script + notebook Colab)
 outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté
 tests/               tests automatiques (pytest)
-templates/, static/  dashboard
+templates/, static/  dashboard + page de suivi pour téléphone (/suivi)
 ```
 
 ## Tests

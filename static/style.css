@@ -205,6 +205,11 @@ tr:hover td { background: #fafbfc; }
 .surv-banniere .chrono { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .surv-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .surv-actions + .surv-actions { margin-top: 2px; }
+.surv-qr { display: flex; gap: 12px; align-items: center; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.surv-qr img { width: 118px; height: 118px; flex: none; border-radius: 6px; image-rendering: pixelated; }
+.surv-qr-txt { min-width: 0; }
+.surv-qr-url { display: block; font-size: 12.5px; font-weight: 600; color: var(--brand); word-break: break-all; }
+.surv-qr p { margin: 5px 0 0; }
 .surv-histo { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); font-size: 12px; max-height: 150px; overflow: auto; }
 .surv-histo:empty { display: none; }
 .surv-histo li { display: grid; grid-template-columns: 58px 1fr; gap: 6px; padding: 2px 0; color: var(--ink-2); }
@@ -222,4 +227,58 @@ tr:hover td { background: #fafbfc; }
   .cam-grid { grid-template-columns: 1fr; }
   .thermal { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---- Page de suivi (téléphone) ---- */
+.page-suivi { background: var(--bg); }
+.page-suivi.hors-ligne .suivi-etat { opacity: .45; }          /* banc injoignable */
+.suivi-tete {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top));
+  background: var(--ink); color: #fff;
+}
+.suivi-tete-txt { min-width: 0; flex: 1; }
+.suivi-tete h1 { font-size: 15px; }
+.suivi-tete p { margin: 2px 0 0; font-size: 12px; color: #b9bdd3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suivi-main { max-width: 560px; margin: 0 auto; padding: 14px 16px calc(28px + env(safe-area-inset-bottom)); display: grid; gap: 14px; }
+
+/* État courant : lisible d'un coup d'œil, couleur selon l'état */
+.suivi-etat {
+  border-radius: var(--radius); padding: 22px 18px; text-align: center;
+  background: var(--brand-soft); color: var(--brand);
+  border: 1px solid transparent; transition: background .25s, color .25s;
+}
+.suivi-libelle { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2; }
+.suivi-detail { margin: 8px 0 0; font-size: 14px; opacity: .85; }
+.suivi-chrono { margin: 10px 0 0; font-size: 56px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.suivi-etat[data-etat="inactif"], .suivi-etat[data-etat=""] { background: #eceef3; color: var(--ink-2); }
+.suivi-etat[data-etat="occupe"] { background: #e7f5e7; color: #136b13; }
+.suivi-etat[data-etat="sortie"] { background: #fef5e2; color: #8a5a00; }
+.suivi-etat[data-etat="alerte-objet"] { background: #fdecc8; color: #8a5a00; border-color: #e7b864; }
+.suivi-etat[data-etat="alerte"] {
+  background: var(--crit); color: #fff; border-color: #a02626;
+  animation: pouls-suivi 1.4s ease-in-out infinite;
+}
+@keyframes pouls-suivi { 50% { box-shadow: 0 0 0 10px rgba(208,59,59,.18); } }
+
+/* Dernière alerte */
+.suivi-alerte h2 { font-size: 16px; }
+.suivi-alerte-msg { margin: 6px 0 2px; font-size: 14px; color: var(--ink-2); }
+.suivi-alerte img { width: 100%; margin-top: 12px; border-radius: 10px; border: 1px solid var(--line); display: block; }
+.suivi-acquitter { margin-top: 14px; background: var(--crit); font-size: 16px; padding: 15px; }
+.suivi-acquitter:hover { background: #a02626; }
+.suivi-retour { margin: 10px 0 0; color: #136b13; }
+.suivi-retour.ko { color: var(--crit); }
+
+/* Journal des événements */
+.suivi-histo { max-height: none; font-size: 13px; }
+.suivi-histo li { grid-template-columns: 64px 1fr; padding: 4px 0; }
+.suivi-histo li + li { border-top: 1px solid var(--line); }
+.suivi-histo .evt-alerte span, .suivi-histo .evt-rappel span { color: var(--crit); font-weight: 600; }
+.suivi-histo .evt-acquittement span { color: #136b13; font-weight: 600; }
+
+@media (min-width: 560px) {
+  .suivi-libelle { font-size: 30px; }
+  .suivi-chrono { font-size: 68px; }
 }
