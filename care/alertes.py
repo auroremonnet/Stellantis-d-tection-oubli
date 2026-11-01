@@ -10,7 +10,8 @@ Reçoit des `Alerte` déjà décidées (care/decision.py) et se charge de l'envo
     - garde-fou : rien ne part tant que le topic n'a pas été remplacé (le dépôt est public,
       le vrai topic vit dans config.local.json ou dans CARE_NTFY_TOPIC) ;
     - bouton « Je m'en occupe » sur les alertes critiques et les rappels : un appui lève
-      l'alerte sur le banc (voir `url_banc`), sans attendre le retour du conducteur.
+      l'alerte sur le banc (voir `url_banc`), sans attendre le retour du conducteur ;
+    - un appui sur la notification elle-même ouvre la page de suivi du banc (`/suivi`).
 
 Les libellés surveillés sont les libellés français du détecteur (« téléphone »,
 « portefeuille », « clés »…), indépendants du moteur (COCO, YOLOE ou modèle entraîné).
@@ -55,6 +56,7 @@ TITRES_ACQUITTEMENT = {"acquittement_distant": "Alerte levée · pris en charge 
 # Bouton d'action de la notification : un POST sur le banc lève l'alerte et stoppe les rappels.
 LIBELLE_ACQUITTEMENT = "Je m'en occupe"
 CHEMIN_ACQUITTEMENT = "/api/surveillance/acquitter"
+CHEMIN_SUIVI = "/suivi"           # page ouverte en touchant la notification
 
 
 class Alerteur:
@@ -100,11 +102,17 @@ class Alerteur:
             image = None
         else:
             message, priorite, tags = alerte.message, alerte.priorite, alerte.tags
-        args = (titre, message, image, priorite, tags, self._actions(alerte, motif))
+        args = (titre, message, image, priorite, tags, self._actions(alerte, motif), self.lien_suivi)
         if self._synchrone:
             return self.envoyer(*args)
         threading.Thread(target=self.envoyer, args=args, daemon=True).start()
         return True
+
+    @property
+    def lien_suivi(self) -> str:
+        """Page ouverte en touchant la notification (en-tête ntfy « Click ») : l'état du banc,
+        la dernière alerte et le bouton d'acquittement, lisibles sur un téléphone."""
+        return f"{self.url_banc}{CHEMIN_SUIVI}" if self.url_banc else ""
 
     def _actions(self, alerte, motif: str) -> str:
         """En-tête ntfy « Actions » : bouton « Je m'en occupe » sur les alertes critiques et
@@ -123,10 +131,10 @@ class Alerteur:
                 "method=POST, clear=true")
 
     def envoyer(self, titre, message, image=None, priorite="high",
-                tags="rotating_light,oncoming_automobile", actions="") -> bool:
+                tags="rotating_light,oncoming_automobile", actions="", clic="") -> bool:
         """Envoi synchrone vers ntfy ; renvoie True si la notification est partie.
         Titre/message/priorité en query params (les headers HTTP cassent les accents) ;
-        le bouton d'action, lui, n'existe qu'en en-tête côté ntfy."""
+        le bouton d'action et le lien du clic, eux, passent en en-têtes (`Actions`, `Click`)."""
         if SENTINELLE_TOPIC in self.topic.upper():
             self.derniere_erreur = (
                 f"topic ntfy non configuré ({self.topic!r}) : définir \"alertes\": "
@@ -141,9 +149,14 @@ class Alerteur:
             if ok:
                 corps = buf.tobytes()
                 params["filename"] = "detection.jpg"
+        entetes = {}
+        if actions:
+            entetes["Actions"] = actions
+        if clic:
+            entetes["Click"] = clic
         try:
             r = requests.put(f"{self.serveur}/{self.topic}", data=corps, params=params,
-                             headers={"Actions": actions} if actions else None, timeout=10)
+                             headers=entetes or None, timeout=10)
             r.raise_for_status()
             self.envois += 1
             self.derniere_erreur = ""

@@ -21,7 +21,7 @@ from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDem
 from care.decision import decider
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.reference import Reference
-from care.stockage import Journal, metriques
+from care.stockage import Journal, derniers_evenements, metriques
 from care.surveillance import Branchements, MachineOubli, Parametres, Superviseur
 
 RACINE = os.path.dirname(os.path.abspath(__file__))
@@ -161,6 +161,13 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/suivi")
+def suivi():
+    """Page de suivi pour le téléphone : état, dernière alerte, acquittement. C'est la page
+    ouverte en touchant la notification ntfy (en-tête « Click » → url_banc + /suivi)."""
+    return render_template("suivi.html")
+
+
 @app.route("/snapshot/<sid>")
 def snapshot(sid):
     s = SOURCES.get(sid)
@@ -263,6 +270,18 @@ def nouvel_essai():
         ALERTEUR.notifier(alerte, mosaique(r["images_rgb"]))
     _eid, ligne = _enregistrer(r, d, "manuel", brutes, alerte and alerte.niveau)
     return jsonify(ligne)
+
+
+@app.route("/api/evenements")
+def api_evenements():
+    """Derniers événements de la surveillance, lus dans evenements.jsonl (donc conservés
+    d'un lancement du banc à l'autre, contrairement à l'historique en mémoire renvoyé par
+    /api/surveillance)."""
+    try:
+        n = int(request.args.get("n", 20))
+    except (TypeError, ValueError):
+        n = 20
+    return jsonify({"evenements": derniers_evenements(EVENEMENTS, max(1, min(n, 200)))})
 
 
 # ---- API surveillance automatique -----------------------------------------

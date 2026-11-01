@@ -1,5 +1,7 @@
-"""Journal des essais (CSV lisible dans Excel) et calcul des métriques."""
+"""Journal des essais (CSV lisible dans Excel), métriques, et relecture du journal
+d'événements de la surveillance (`evenements.jsonl`, une ligne JSON par transition)."""
 import csv
+import json
 import os
 import threading
 
@@ -124,3 +126,30 @@ def metriques(lignes):
     if obj:
         res["objets"] = _ratio(sum(1 for l in obj if l["objets"]), len(obj))
     return res
+
+
+def derniers_evenements(chemin: str, n: int = 20, taille_max: int = 64 * 1024) -> list[dict]:
+    """Les `n` derniers événements de `evenements.jsonl`, du plus ancien au plus récent.
+
+    Le fichier grossit à chaque cycle et la page de suivi le relit en boucle : on ne lit
+    donc que sa fin (`taille_max`), jamais tout le journal. La première ligne de ce bloc
+    peut être coupée en plein milieu, elle est écartée ; une ligne illisible (écriture
+    interrompue) est ignorée plutôt que de faire échouer toute la lecture."""
+    if n <= 0 or not os.path.exists(chemin):
+        return []
+    with open(chemin, "rb") as fh:
+        fh.seek(0, os.SEEK_END)
+        depuis = max(0, fh.tell() - taille_max)
+        fh.seek(depuis)
+        lignes = fh.read().decode("utf-8", "replace").splitlines()
+    if depuis:
+        lignes = lignes[1:]
+    out = []
+    for ligne in lignes[-n:]:
+        try:
+            evt = json.loads(ligne)
+        except ValueError:
+            continue
+        if isinstance(evt, dict):
+            out.append(evt)
+    return out
