@@ -18,6 +18,7 @@ import sys
 import cv2
 
 from care import peripheriques
+from care.cameras import est_tc001, image_visible
 
 RACINE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
@@ -66,7 +67,8 @@ def main():
                 print(f"  index {d['index']:<2} {d['nom']:<35} (pas d'image)")
             continue
         genre = ("webcam du PC" if peripheriques._contient(d["nom"], exclure) else
-                 "thermique ?" if peripheriques._contient(d["nom"], mots_th) or f.shape[1] <= 160 else "")
+                 "thermique ?" if peripheriques._contient(d["nom"], mots_th) or f.shape[1] <= 160
+                 or est_tc001(f) else "")
         print(f"  index {d['index']:<2} {d['nom'] or '?':<35} {f.shape[1]}x{f.shape[0]}  {genre}")
         trouvees.append({**d, "image": f, "genre": genre})
     if a.liste or not trouvees:
@@ -82,6 +84,8 @@ def main():
     for d in sorted(trouvees, key=lambda d: d["genre"] == "webcam du PC"):
         titre = f"index {d['index']} - {d['nom'] or '?'}"
         img = d["image"]
+        if est_tc001(img):  # flux thermique InfiRay / TC001 : n'afficher que le bloc image
+            img = image_visible(img)
         if img.ndim == 2 or img.dtype != "uint8":
             img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
         cv2.imshow(titre, img)

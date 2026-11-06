@@ -24,7 +24,7 @@
   "camera_thermique": {
     "id": "thermal",
     "index": "auto",
-    "label": "Thermique (banquette arrière)",
+    "label": "Thermique TC001 (banquette arrière)",
     "active": true
   },
   "cameras": {
@@ -40,7 +40,8 @@
       "virtual",
       "obs ",
       "droidcam",
-      "camo"
+      "camo",
+      "1080p fhd camera"
     ],
     "thermique": [
       "purethermal",
@@ -48,6 +49,7 @@
       "thermal",
       "flir",
       "topdon",
+      "tc001",
       "infiray",
       "seek"
     ]
@@ -102,6 +104,15 @@
     "zones_max": 6
   },
   "thermique": {
+    "_aide": "Caméra du banc (UVC Camera, 256x392) : backend msmf + resolution [256, 392], mode relatif (comptes bruts). Vraie TC001 : resolution [256, 384]. Vérifier avec python outils/diag_thermique.py",
+    "modele": "tc001",
+    "backend": "msmf",
+    "resolution": [
+      256,
+      392
+    ],
+    "seuil_comptes": 200,
+    "centile_fond": 10,
     "seuil_celsius": 30.0,
     "seuil_8bit": 200,
     "pixels_chauds_min": 20
