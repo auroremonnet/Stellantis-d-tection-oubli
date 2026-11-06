@@ -158,6 +158,13 @@ python outils/evaluer.py --donnees datasets/care-oubli-v1/data.yaml --moteurs yo
 
 ## Calibrer la thermique
 
+La caméra thermique est une **Topdon TC001** (256×192, radiométrique) : le banc lit ses
+températures brutes (`thermique.modele = "tc001"`). Vérifier qu'elles sont bien lues,
+dashboard arrêté : `python outils/diag_thermique.py` (main devant la caméra : la max doit
+monter vers 30-35 °C). Il indique l'index et le `backend` à reporter dans `config.local.json`.
+Dans le dashboard, le panneau doit afficher le mode « radiométrique (TC001) » : « 8 bits »
+veut dire que les températures ne sont pas lues et le seuil ne veut rien dire.
+
 Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le nombre de pixels chauds et la T° max.
 
 1. Faire un essai à vide, puis un essai avec la poupée chauffée.

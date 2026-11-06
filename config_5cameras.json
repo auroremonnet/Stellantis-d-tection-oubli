@@ -24,7 +24,7 @@
   "camera_thermique": {
     "id": "thermal",
     "index": "auto",
-    "label": "Thermique (banquette arrière)",
+    "label": "Thermique TC001 (banquette arrière)",
     "active": true
   },
   "cameras": {
@@ -48,6 +48,7 @@
       "thermal",
       "flir",
       "topdon",
+      "tc001",
       "infiray",
       "seek"
     ]
@@ -102,6 +103,8 @@
     "zones_max": 6
   },
   "thermique": {
+    "modele": "tc001",
+    "backend": "",
     "seuil_celsius": 30.0,
     "seuil_8bit": 200,
     "pixels_chauds_min": 20

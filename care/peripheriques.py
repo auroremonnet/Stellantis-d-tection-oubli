@@ -22,7 +22,7 @@ from pathlib import Path
 EXCLURE_DEFAUT = ["integrated", "intégrée", "built-in", "facetime", "webcam", "ir camera",
                   "windows hello", "virtual", "obs ", "droidcam", "camo"]
 # Morceaux de nom typiques d'une caméra thermique (PureThermal / Lepton, Topdon, InfiRay…).
-THERMIQUE_DEFAUT = ["purethermal", "lepton", "thermal", "flir", "topdon", "infiray", "seek"]
+THERMIQUE_DEFAUT = ["purethermal", "lepton", "thermal", "flir", "topdon", "tc001", "infiray", "seek"]
 
 
 def lister() -> list[dict] | None:

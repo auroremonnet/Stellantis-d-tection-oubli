@@ -95,29 +95,70 @@ class Source:
                 "ok": self.ok and time.time() - self.stamp < 3, "erreur": self.erreur}
 
 
+# Topdon TC001 (256x192) : le flux UVC fait 256x384 en YUYV. Moitié haute = image déjà
+# colorisée par la caméra (gain automatique, inutilisable pour un seuil) ; moitié basse =
+# températures brutes, 2 octets par pixel (petit-boutiste), T(°C) = brut / 64 - 273,15.
+# Il faut lire le flux SANS conversion RGB d'OpenCV, sinon la moitié basse devient des rayures.
+TC001_L, TC001_H = 256, 192
+
+
+def decoder_tc001(f):
+    """Températures (°C, 192x256) d'une image brute TC001, ou None si l'image a été convertie
+    en couleur par le pilote (températures perdues)."""
+    a = np.asarray(f)
+    if a.dtype != np.uint8 or a.size != TC001_L * TC001_H * 2 * 2:
+        return None
+    if a.ndim == 3 and a.shape[2] == 3:
+        return None
+    brut = a.reshape(TC001_H * 2, TC001_L, 2)[TC001_H:]
+    return (brut[..., 0].astype(np.float32) + brut[..., 1].astype(np.float32) * 256) / 64 - 273.15
+
+
+def est_tc001(f):
+    a = np.asarray(f)
+    return a.size in (TC001_L * TC001_H * 4, TC001_L * TC001_H * 6) and a.dtype == np.uint8
+
+
 class SourceThermique(Source):
-    """Caméra thermique 80x60. Tente le flux brut 16 bits (radiométrique)."""
+    """Caméra thermique. Gère la Topdon TC001 (radiométrique, 256x192) et la Lepton 80x60
+    (PureThermal, Y16). `thermique.modele` dans config.json : "auto" (défaut), "tc001", "lepton"."""
 
     def __init__(self, sid, index, label, params, peripherique="", probleme=""):
         super().__init__(sid, index, label, (160, 120), peripherique, probleme)
         self.params = params
+        self.modele = params.get("modele", "auto")
         self.mode = "?"
 
     def _ouvrir(self):
-        cap = cv2.VideoCapture(self.index, BACKEND)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"Y16 "))
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
+        backend = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2}.get(
+            self.params.get("backend", ""), BACKEND)
+        cap = cv2.VideoCapture(self.index, backend)
+        if self.modele == "lepton":
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"Y16 "))
+        cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)   # flux brut : indispensable pour les températures
         return cap
+
+    @staticmethod
+    def _echelle(temp):
+        # échelle fixe 15-40 °C : un habitacle vide reste sombre au lieu d'amplifier le bruit
+        return np.clip((temp - 15) * (255 / 25), 0, 255).astype(np.uint8)
 
     def masque_chaud(self, f):
         """Retourne (masque des pixels chauds, image 8 bits, température max ou None)."""
         p = self.params
+        if self.modele in ("auto", "tc001") and est_tc001(f):
+            temp = decoder_tc001(f)
+            if temp is not None:
+                self.mode = "radiométrique (TC001)"
+                return temp > p["seuil_celsius"], self._echelle(temp), float(temp.max())
+            # le pilote a converti en couleur : seule l'image colorisée (moitié haute) reste
+            self.mode = "8 bits (TC001 converti, températures perdues)"
+            g = cv2.cvtColor(np.asarray(f).reshape(TC001_H * 2, TC001_L, 3)[:TC001_H], cv2.COLOR_BGR2GRAY)
+            return g > p["seuil_8bit"], g, None
         if f.dtype == np.uint16:
             self.mode = "radiométrique"
-            temp = f.astype(np.float32) / 100.0 - 273.15  # format TLinear (centi-Kelvin)
-            # échelle fixe 15-40 °C : un habitacle vide reste sombre au lieu d'amplifier le bruit
-            img = np.clip((temp - 15) * (255 / 25), 0, 255).astype(np.uint8)
-            return temp > p["seuil_celsius"], img, float(temp.max())
+            temp = f.astype(np.float32) / 100.0 - 273.15  # Lepton, format TLinear (centi-Kelvin)
+            return temp > p["seuil_celsius"], self._echelle(temp), float(temp.max())
         self.mode = "8 bits"
         g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f
         return g > p["seuil_8bit"], g, None
