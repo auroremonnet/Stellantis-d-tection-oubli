@@ -42,10 +42,13 @@ class Source:
         if isinstance(self.index, str):  # caméra IP : FFmpeg choisit le format
             return cv2.VideoCapture(self.index)
         cap = cv2.VideoCapture(self.index, BACKEND)
-        # MJPG : indispensable pour faire passer plusieurs flux 720p sur un seul hub USB
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        # Résolution D'ABORD, MJPG ENSUITE. Sous DirectShow, changer la résolution
+        # renégocie le format et repasse en YUY2 non compressé : 4 flux 720p YUY2 saturent le
+        # hub USB et OpenCV renvoie des images entièrement noires (~1 image/s). Demandé après,
+        # le MJPG tient : 4 x 1280x720 à ~30 images/s sur le même hub (diagnostic du 06/11/2026).
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         return cap
 
@@ -90,9 +93,21 @@ class Source:
         return self.derniere()
 
     def etat(self):
+        ok, erreur = self.ok and time.time() - self.stamp < 3, self.erreur
+        if ok and image_noire(self.frame):
+            # le flux « répond » mais l'image est vide : ne pas afficher une pastille verte
+            ok, erreur = False, "image noire (débit USB du hub / format non MJPG, ou objectif masqué)"
         return {"id": self.id, "label": self.label, "index": self.index,
                 "peripherique": self.peripherique, "probleme": self.probleme,
-                "ok": self.ok and time.time() - self.stamp < 3, "erreur": self.erreur}
+                "ok": ok, "erreur": erreur}
+
+
+def image_noire(f, seuil=3.0):
+    """Vrai si l'image est (quasi) entièrement noire. Les premières images après l'ouverture
+    le sont souvent ; un flux qui reste noir signale un problème de format ou de débit USB."""
+    if f is None or f.dtype != np.uint8:
+        return False
+    return float(f[::8, ::8].mean()) < seuil and int(f[::8, ::8].max()) < 40
 
 
 class SourceThermique(Source):
