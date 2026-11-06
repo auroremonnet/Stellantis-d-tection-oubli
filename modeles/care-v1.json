@@ -1,0 +1,54 @@
+{
+  "nom": "care-v1",
+  "date": "2026-11-01T14:38:24",
+  "jeu_de_donnees": "roboflow:aurores-workspace-zu1oe/care-oubli/1",
+  "base": "yolo26s.pt",
+  "reglages": {
+    "epochs": 100,
+    "imgsz": 640,
+    "batch": -1,
+    "freeze": 10,
+    "patience": 20
+  },
+  "classes": [
+    "baby",
+    "card",
+    "keys",
+    "wallet"
+  ],
+  "epochs_effectives": 56,
+  "metriques": {
+    "split": "test",
+    "mAP50": 0.894,
+    "mAP50-95": 0.699,
+    "precision": 0.883,
+    "rappel": 0.907,
+    "par_classe": {
+      "baby": {
+        "precision": 0.855,
+        "rappel": 1.0,
+        "mAP50": 0.871,
+        "mAP50-95": 0.538
+      },
+      "card": {
+        "precision": 0.96,
+        "rappel": 0.978,
+        "mAP50": 0.986,
+        "mAP50-95": 0.94
+      },
+      "keys": {
+        "precision": 0.811,
+        "rappel": 0.682,
+        "mAP50": 0.768,
+        "mAP50-95": 0.551
+      },
+      "wallet": {
+        "precision": 0.905,
+        "rappel": 0.967,
+        "mAP50": 0.952,
+        "mAP50-95": 0.767
+      }
+    }
+  },
+  "run": "/content/care/runs/care-v1"
+}

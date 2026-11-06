@@ -105,12 +105,14 @@
     {
       "code": "S5",
       "nom": "Objet de valeur (sac, ordinateur, téléphone)",
-      "verite": "objet"
+      "verite": "objet",
+      "objets": ["sac"]
     },
     {
       "code": "S6",
       "nom": "Objet anodin (vêtement, sacoche vide)",
-      "verite": "vide"
+      "verite": "vide",
+      "objets": ["veste"]
     },
     {
       "code": "S7",
@@ -120,9 +122,12 @@
     {
       "code": "S8",
       "nom": "Source chaude inerte (sac au soleil, gourde chaude)",
-      "verite": "vide"
+      "verite": "vide",
+      "objets": ["gourde"]
     }
   ],
+  "objets_poses": ["téléphone", "clés", "portefeuille", "carte bancaire", "sac", "ordinateur",
+                   "poupon", "veste", "gourde", "autre"],
   "variantes": [
     "Jour",
     "Nuit / faible lumière",

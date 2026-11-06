@@ -3,14 +3,38 @@ import csv
 import os
 import threading
 
+from .metriques_detection import canonique
+
 COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", "vivant_thermique",
             "classes_vivant", "objets", "cameras_vivant", "pixels_chauds", "tmax", "latence_s",
             "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee",
-            "mode", "alerte", "latence_alerte_s"]
+            "mode", "alerte", "latence_alerte_s", "objets_poses"]
+
+OBJECTIF_NCAP_S = 15  # Euro NCAP 2026 : premier avertissement < 15 s après le départ
+
+# Un objet posé est « retrouvé » si l'une de ces détections apparaît (après synonymes) :
+# le banc pose « un sac », le détecteur répond « sac à main » ou « sac à dos ».
+FAMILLES = {"sac": {"sac", "sac à main", "sac à dos"}, "poupon": {"bébé", "personne"}}
+NON_IDENTIFIABLES = {"autre"}  # pas de libellé détecteur correspondant : seul le signalement compte
+CATEGORIE = {"objet": "valeur", "vide": "anodin", "vivant": "vivant"}
 
 
 def _bool(v):
     return None if v in ("", None) else str(v) in ("1", "True", "true")
+
+
+def _liste(v):
+    """« téléphone, clés » (CSV) ou ["téléphone", "clés"] → liste nettoyée."""
+    if isinstance(v, (list, tuple)):
+        return [str(x).strip() for x in v if str(x).strip()]
+    return [x.strip() for x in str(v or "").split(",") if x.strip()]
+
+
+def _float(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
 
 
 class Journal:
@@ -49,6 +73,7 @@ class Journal:
             l["reference_utilisee"] = _bool(l["reference_utilisee"])
             l["lumiere_changee"] = _bool(l["lumiere_changee"])
             l.update(evaluer(l))
+            l["niveau_alerte"] = niveau_alerte(l)
         return lignes
 
     def ajouter(self, ligne):
@@ -56,8 +81,8 @@ class Journal:
             row = {k: ligne.get(k, "") for k in COLONNES}
             for k in ("vivant_rgb", "vivant_thermique", "reference_utilisee", "lumiere_changee"):
                 row[k] = "" if row[k] in ("", None) else int(bool(row[k]))
-            for k in ("classes_vivant", "objets", "cameras_vivant"):
-                if isinstance(row[k], list):
+            for k in ("classes_vivant", "objets", "cameras_vivant", "objets_poses"):
+                if isinstance(row[k], (list, tuple)):
                     row[k] = ", ".join(row[k])
             row = {k: ("" if v is None else v) for k, v in row.items()}
             csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";").writerow(row)
@@ -123,4 +148,89 @@ def metriques(lignes):
     obj = [l for l in lignes if l["verite"] == "objet"]
     if obj:
         res["objets"] = _ratio(sum(1 for l in obj if l["objets"]), len(obj))
+    res["thermique_mesuree"] = any(l.get("vivant_thermique") is not None for l in lignes)
+    res["indicateurs"] = indicateurs(lignes)
+    res["par_objet"] = detection_par_objet(lignes)
     return res
+
+
+# ---- Indicateurs clés du dashboard ------------------------------------------------
+def niveau_alerte(l):
+    """Niveau d'alerte de l'essai : "critique", "objet" ou None.
+
+    Les essais écrits avant la colonne `alerte` (colonne `mode` vide) n'ont pas de niveau
+    enregistré : on le déduit de leur décision, sinon ils compteraient à tort comme
+    « aucune alerte » (faux 0 % d'objets détectés).
+    """
+    if l.get("mode"):
+        return l.get("alerte") or None
+    dec = l.get("decision_A2") or l.get("decision_A1")
+    if dec is None:
+        dec = evaluer(l).get("decision_A2") or evaluer(l)["decision_A1"]
+    return {"CRITIQUE": "critique", "ALERTE": "objet"}.get(dec)
+
+
+def _niveau(l):
+    return l["niveau_alerte"] if "niveau_alerte" in l else niveau_alerte(l)
+
+
+def indicateurs(lignes):
+    """Les 4 chiffres du rapport. `taux` vaut None (affiché « — ») tant qu'il n'y a pas d'essai."""
+    # 1. Présences vivantes : meilleure approche disponible essai par essai (A2 si thermique)
+    viv = [l for l in lignes if l["verite"] == "vivant"]
+    vus = [(l.get("A2") or l["A1"]) == "VP" for l in viv]
+    avec_th = sum(1 for l in viv if l.get("A2"))
+    approche = None if not viv else "A2" if avec_th == len(viv) else "A1" if avec_th == 0 else "A1/A2"
+    # 2. Objets oubliés : l'essai a produit une alerte « objet »
+    obj = [l for l in lignes if l["verite"] == "objet"]
+    obj_ok = sum(1 for l in obj if _niveau(l) == "objet")
+    # 3. Fausses alertes : habitacle sans risque, mais une alerte (quel que soit le niveau)
+    vide = [l for l in lignes if l["verite"] == "vide"]
+    fa = sum(1 for l in vide if _niveau(l))
+    # 4. Latence départ → verdict, essais automatiques uniquement
+    lat = [v for l in lignes if l.get("mode") == "auto"
+           and (v := _float(l.get("latence_alerte_s"))) is not None]
+    pire = max(lat) if lat else None
+    return {
+        "vivant": {"n": len(viv), "detectes": sum(vus), "taux": _ratio(sum(vus), len(viv)),
+                   "approche": approche},
+        "objets": {"n": len(obj), "detectes": obj_ok, "taux": _ratio(obj_ok, len(obj))},
+        "fausses_alertes": {"n": len(vide), "alertes": fa, "taux": _ratio(fa, len(vide))},
+        "latence": {"n": len(lat), "moyenne": round(sum(lat) / len(lat), 2) if lat else None,
+                    "pire": pire, "objectif_s": OBJECTIF_NCAP_S,
+                    "conforme": None if pire is None else pire <= OBJECTIF_NCAP_S},
+    }
+
+
+def retrouve(objet_pose, detections):
+    """L'objet posé figure-t-il parmi les détections (synonymes et familles compris) ?"""
+    c = canonique(objet_pose)
+    acceptes = {canonique(x) for x in FAMILLES.get(c, {c})}
+    return any(canonique(d) in acceptes for d in detections)
+
+
+def detection_par_objet(lignes):
+    """Une entrée par (objet posé, catégorie) : identifié = retrouvé nommément dans les
+    détections ; signalé = l'essai a produit une alerte (y compris « objet non identifié »)."""
+    acc = {}
+    for l in lignes:
+        poses = _liste(l.get("objets_poses"))
+        if not poses:
+            continue
+        detections = _liste(l.get("objets")) + _liste(l.get("classes_vivant"))
+        alerte = bool(_niveau(l))
+        cat = CATEGORIE.get(l["verite"], l["verite"])
+        for o in dict.fromkeys(poses):
+            a = acc.setdefault((o, cat), {"objet": o, "categorie": cat, "n": 0, "identifies": 0, "signales": 0})
+            a["n"] += 1
+            a["identifies"] += retrouve(o, detections)
+            a["signales"] += alerte
+    out = []
+    for a in acc.values():
+        identifiable = a["objet"] not in NON_IDENTIFIABLES
+        a["identifiable"] = identifiable
+        a["taux"] = _ratio(a["identifies"], a["n"]) if identifiable else None
+        a["taux_signale"] = _ratio(a["signales"], a["n"])
+        out.append(a)
+    ordre = {"valeur": 0, "anodin": 1, "vivant": 2}
+    return sorted(out, key=lambda a: (ordre.get(a["categorie"], 9), -a["n"], a["objet"]))

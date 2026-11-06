@@ -1,0 +1,28 @@
+{"t": 1793542471.375, "heure": "14:14:31", "type": "veille", "detail": "surveillance armée", "source": "surveillance"}
+{"t": 1793542480.314, "heure": "14:14:40", "type": "occupe", "detail": "occupant à bord", "source": "surveillance"}
+{"t": 1793542504.108, "heure": "14:15:04", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793542510.721, "heure": "14:15:10", "type": "analyse", "detail": "habitacle vide depuis 8 s", "source": "surveillance"}
+{"t": 1793542517.383, "heure": "14:15:17", "type": "alerte", "detail": "alerte objet : téléphone, objet non identifié", "source": "surveillance"}
+{"t": 1793542521.816, "heure": "14:15:21", "type": "occupe", "detail": "conducteur revenu : alerte levée", "source": "surveillance"}
+{"t": 1793542702.301, "heure": "14:18:22", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793542702.799, "heure": "14:18:22", "type": "occupe", "detail": "occupant revenu avant l'analyse", "source": "surveillance"}
+{"t": 1793542759.061, "heure": "14:19:19", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793542759.571, "heure": "14:19:19", "type": "occupe", "detail": "occupant revenu avant l'analyse", "source": "surveillance"}
+{"t": 1793542790.748, "heure": "14:19:50", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793548114.579, "heure": "15:48:34", "type": "veille", "detail": "surveillance armée", "source": "surveillance"}
+{"t": 1793548117.098, "heure": "15:48:37", "type": "occupe", "detail": "occupant à bord", "source": "surveillance"}
+{"t": 1793548125.141, "heure": "15:48:45", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793548131.389, "heure": "15:48:51", "type": "analyse", "detail": "habitacle vide depuis 8 s", "source": "surveillance"}
+{"t": 1793548164.703, "heure": "15:49:24", "type": "alerte", "detail": "alerte critique : présence humaine", "source": "surveillance"}
+{"t": 1793548167.279, "heure": "15:49:27", "type": "occupe", "detail": "conducteur revenu : alerte levée", "source": "surveillance"}
+{"t": 1793548180.061, "heure": "15:49:40", "type": "inactif", "detail": "surveillance désarmée", "source": "surveillance"}
+{"t": 1793548304.869, "heure": "15:51:44", "type": "veille", "detail": "surveillance armée", "source": "surveillance"}
+{"t": 1793548330.323, "heure": "15:52:10", "type": "analyse", "detail": "verrouillage du véhicule", "source": "surveillance"}
+{"t": 1793548347.08, "heure": "15:52:27", "type": "alerte", "detail": "alerte objet : clés de voiture, objet non identifié", "source": "surveillance"}
+{"t": 1793548350.74, "heure": "15:52:30", "type": "occupe", "detail": "conducteur revenu : alerte levée", "source": "surveillance"}
+{"t": 1793548360.047, "heure": "15:52:40", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793548365.627, "heure": "15:52:45", "type": "occupe", "detail": "occupant revenu avant l'analyse", "source": "surveillance"}
+{"t": 1793548367.175, "heure": "15:52:47", "type": "sortie", "detail": "plus d'adulte détecté", "source": "surveillance"}
+{"t": 1793548370.909, "heure": "15:52:50", "type": "occupe", "detail": "occupant revenu avant l'analyse", "source": "surveillance"}
+{"t": 1793548382.298, "heure": "15:53:02", "type": "analyse", "detail": "verrouillage du véhicule", "source": "surveillance"}
+{"t": 1793548387.132, "heure": "15:53:07", "type": "inactif", "detail": "surveillance désarmée", "source": "surveillance"}

@@ -75,6 +75,14 @@ def _capturer_brutes():
     return {s.id: f for s in RGB if (f := s.derniere()) is not None}
 
 
+def _objets_poses(d):
+    """Objets réellement posés par l'opérateur (vérité terrain par objet) : liste de libellés."""
+    v = d.get("objets_poses") or []
+    if isinstance(v, str):
+        v = v.split(",")
+    return [str(x).strip()[:40] for x in v if str(x).strip()][:12]
+
+
 def _enregistrer(r, contexte, mode, brutes=None, niveau_alerte=None):
     """Sauve les images et, si la vérité terrain est connue, ajoute la ligne au journal."""
     eid = r.get("id") or datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -94,7 +102,7 @@ def _enregistrer(r, contexte, mode, brutes=None, niveau_alerte=None):
                   "scenario": contexte["scenario"], "variante": contexte.get("variante", ""),
                   "verite": contexte["verite"], "commentaire": contexte.get("commentaire", ""),
                   "moteur": DETECTEUR.moteur, "mode": mode,
-                  "alerte": niveau_alerte or ""})
+                  "alerte": niveau_alerte or "", "objets_poses": _objets_poses(contexte)})
     JOURNAL.ajouter(ligne)
     return eid, next((l for l in JOURNAL.lire() if l["id"] == eid), None)
 
@@ -207,6 +215,7 @@ def etat():
 @app.route("/api/config")
 def config():
     out = {k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")}
+    out["objets_poses"] = CFG.get("objets_poses", [])
     out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele,
                         "prompts_vivant": DETECTEUR.prompts_vivant, "prompts_valeur": DETECTEUR.prompts_valeur}
     return jsonify(out)
@@ -234,6 +243,8 @@ def effacer_reference():
 @app.route("/api/essais")
 def essais():
     lignes = JOURNAL.lire()
+    for l in lignes:  # le dashboard ne demande que les images qui existent (pas de 404 en console)
+        l["image"] = os.path.exists(os.path.join(IMAGES, f"{l['id']}_rgb.jpg"))
     return jsonify({"essais": lignes[::-1], "metriques": metriques(lignes)})
 
 
@@ -285,6 +296,7 @@ def surveillance_armer():
     if DEMO:
         _demo_scene("vide")
     contexte = {k: d.get(k, "") for k in ("scenario", "variante", "verite", "commentaire")}
+    contexte["objets_poses"] = _objets_poses(d)
     SUPERVISEUR.armer(contexte)
     return jsonify(SUPERVISEUR.instantane())
 

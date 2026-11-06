@@ -1,13 +1,35 @@
-﻿id;horodatage;scenario;variante;verite;vivant_rgb;vivant_thermique;classes_vivant;objets;cameras_vivant;pixels_chauds;tmax;latence_s;commentaire;moteur;zones_nouvelles;reference_utilisee;lumiere_changee
-20261021-093107;2026-10-21T09:31:07;S5;Jour;objet;0;;;;;;;2.29;tel sur le siege;;;;
-20261021-093955;2026-10-21T09:39:55;S5;Jour;objet;1;;personne;;rgb1;;;15.42;tel oublié +personne;;;;
-20261021-094040;2026-10-21T09:40:41;S5;Jour;objet;0;;;;rgb0;;;15.4;;;;;
-20261021-094107;2026-10-21T09:41:07;S5;Jour;objet;0;;;;;;;14.08;;;;;
-20261021-094142;2026-10-21T09:41:42;S5;Jour;objet;1;;personne;;rgb0;;;14.77;;;;;
-20261021-094231;2026-10-21T09:42:31;S5;Jour;objet;0;;;ordinateur;;;;12.65;;;;;
-20261021-094304;2026-10-21T09:43:04;S5;Jour;objet;1;;personne;ordinateur;rgb0;;;14.67;;;;;
-20261021-094341;2026-10-21T09:43:41;S5;Jour;objet;0;;;;;;;13.79;;;;;
-20261021-094430;2026-10-21T09:44:30;S5;Jour;objet;1;;personne;;rgb0;;;16.22;;;;;
-20261021-103458;2026-10-21T10:34:58;S1;Jour;vivant;1;;personne;lunettes, téléphone;rgb0;;;4.31;;yoloe;0;0;0
-20261021-103536;2026-10-21T10:35:36;S1;Jour;vivant;1;;personne;lunettes, montre, ordinateur, sac à main;rgb0;;;4.81;;yoloe;0;0;0
-20261021-103700;2026-10-21T10:37:00;S1;Jour;vivant;0;;;ordinateur, sac à dos, téléphone;;;;4.21;;yoloe;0;0;0
+﻿id;horodatage;scenario;variante;verite;vivant_rgb;vivant_thermique;classes_vivant;objets;cameras_vivant;pixels_chauds;tmax;latence_s;commentaire;moteur;zones_nouvelles;reference_utilisee;lumiere_changee;mode;alerte;latence_alerte_s;objets_poses
+20261021-093107;2026-10-21T09:31:07;S5;Jour;objet;0;;;;;;;2.29;tel sur le siege;;;;;;;;
+20261021-093955;2026-10-21T09:39:55;S5;Jour;objet;1;;personne;;rgb1;;;15.42;tel oublié +personne;;;;;;;;
+20261021-094040;2026-10-21T09:40:41;S5;Jour;objet;0;;;;rgb0;;;15.4;;;;;;;;;
+20261021-094107;2026-10-21T09:41:07;S5;Jour;objet;0;;;;;;;14.08;;;;;;;;;
+20261021-094142;2026-10-21T09:41:42;S5;Jour;objet;1;;personne;;rgb0;;;14.77;;;;;;;;;
+20261021-094231;2026-10-21T09:42:31;S5;Jour;objet;0;;;ordinateur;;;;12.65;;;;;;;;;
+20261021-094304;2026-10-21T09:43:04;S5;Jour;objet;1;;personne;ordinateur;rgb0;;;14.67;;;;;;;;;
+20261021-094341;2026-10-21T09:43:41;S5;Jour;objet;0;;;;;;;13.79;;;;;;;;;
+20261021-094430;2026-10-21T09:44:30;S5;Jour;objet;1;;personne;;rgb0;;;16.22;;;;;;;;;
+20261021-103458;2026-10-21T10:34:58;S1;Jour;vivant;1;;personne;lunettes, téléphone;rgb0;;;4.31;;yoloe;0;0;0;;;;
+20261021-103536;2026-10-21T10:35:36;S1;Jour;vivant;1;;personne;lunettes, montre, ordinateur, sac à main;rgb0;;;4.81;;yoloe;0;0;0;;;;
+20261022-170405;2026-10-22T17:04:05;S5;Jour;objet;0;0;;ordinateur, portefeuille, téléphone;;0;;28.43;;yoloe;0;0;0;;;;
+20261101-154924;2026-11-01T15:49:24;S1;Jour;vivant;1;;personne;carte bancaire, objet non identifié;rgb0;;;33.31;;hybride;4;1;0;auto;critique;41.64;
+20261101-155227;2026-11-01T15:52:27;S1;Jour;vivant;0;;;clés de voiture, objet non identifié;;;;16.36;;hybride;6;1;0;auto;objet;16.75;
+20261101-155430;2026-11-01T15:54:30;S1;Jour;vivant;1;;bébé;objet non identifié;rgb0;;;12.2;;hybride;3;1;0;manuel;critique;;
+20261101-155548;2026-11-01T15:55:48;S1;Jour;vivant;1;;bébé;clés;rgb0;;;6.37;;hybride;0;1;1;manuel;critique;;
+20261101-155635;2026-11-01T15:56:35;S1;Jour;vivant;1;;bébé;clés, objet non identifié;rgb0;;;9.41;;hybride;5;1;0;manuel;critique;;
+20261101-155821;2026-11-01T15:58:21;S1;Jour;vivant;1;;bébé;clés, clés de voiture;rgb0;;;12.32;;hybride;0;1;1;manuel;critique;;
+20261101-155923;2026-11-01T15:59:23;S1;Jour;vivant;1;;bébé;clés, objet non identifié;rgb0;;;8.78;;hybride;4;1;0;manuel;critique;;
+20261101-160224;2026-11-01T16:02:24;S1;Jour;vivant;1;;bébé, personne;;rgb0;;;6.4;;hybride;0;1;1;manuel;;;
+20261101-160307;2026-11-01T16:03:07;S1;Jour;vivant;0;;;clés, clés de voiture;;;;6.41;;hybride;0;1;1;manuel;objet;;
+20261101-160343;2026-11-01T16:03:43;S1;Jour;vivant;0;;;clés, clés de voiture;;;;6.4;;hybride;0;1;1;manuel;objet;;
+20261101-160407;2026-11-01T16:04:07;S1;Jour;vivant;0;;;clés de voiture;;;;6.29;;hybride;0;1;1;manuel;objet;;
+20261101-160446;2026-11-01T16:04:46;S1;Jour;vivant;1;;chien, personne;objet non identifié;rgb0;;;7.53;;hybride;1;1;0;manuel;;;
+20261101-162057;2026-11-01T16:20:57;S1;Jour;vivant;1;;chien;;rgb0;;;6.15;;hybride;0;1;1;manuel;critique;;
+20261101-162109;2026-11-01T16:21:09;S1;Jour;vivant;1;;chien;;rgb0;;;6.4;;hybride;0;1;1;manuel;critique;;
+20261101-162119;2026-11-01T16:21:19;S1;Jour;vivant;1;;chien;;rgb0;;;6.36;;hybride;0;1;1;manuel;critique;;
+20261101-162138;2026-11-01T16:21:38;S1;Jour;vivant;1;;chien;;rgb0;;;7.33;;hybride;0;1;1;manuel;critique;;
+20261101-162201;2026-11-01T16:22:01;S1;Jour;vivant;0;;;portefeuille, objet non identifié;;;;15.03;;hybride;3;1;0;manuel;objet;;
+20261101-162243;2026-11-01T16:22:43;S1;Jour;vivant;1;;bébé, chien;;rgb0;;;6.68;;hybride;0;1;1;manuel;critique;;
+20261101-162304;2026-11-01T16:23:04;S1;Jour;vivant;1;;chien;;rgb0;;;6.59;;hybride;0;1;1;manuel;critique;;
+20261101-162341;2026-11-01T16:23:41;S1;Jour;vivant;1;;bébé, chat;;rgb0;;;6.9;;hybride;0;1;1;manuel;critique;;
+20261101-162355;2026-11-01T16:23:55;S1;Jour;vivant;1;;chien;;rgb0;;;6.86;;hybride;0;1;1;manuel;critique;;
+20261101-162404;2026-11-01T16:24:04;S1;Jour;vivant;1;;chien;;rgb0;;;6.69;;hybride;0;1;1;manuel;critique;;

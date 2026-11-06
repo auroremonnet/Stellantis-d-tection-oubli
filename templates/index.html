@@ -10,143 +10,176 @@
 <body>
 <header class="topbar">
   <div class="brand">
-    <div class="logo">C</div>
+    <div class="logo" aria-hidden="true">C</div>
     <div>
       <h1>CARE · Détection d'oubli dans l'habitacle</h1>
       <p>Groupe 2 · Banc de test A1 (RGB) / A2 (RGB + thermique)</p>
     </div>
   </div>
-  <div class="status">
+  <div class="status" role="status" aria-label="État du banc">
     <span id="badge-demo" class="pill pill-demo" hidden>MODE DÉMO</span>
     <span id="st-modele" class="pill"><i></i>Modèle</span>
     <span id="st-rgb" class="pill"><i></i>Caméras</span>
     <span id="st-th" class="pill"><i></i>Thermique</span>
+    <span id="st-ntfy" class="pill"><i></i>Alertes téléphone</span>
     <a class="btn btn-ghost" href="/api/export">Exporter CSV</a>
   </div>
 </header>
 
 <main>
-  <!-- ===== Live + essai ===== -->
+  <!-- ===== Live + pilotage ===== -->
   <section class="row-live">
-    <div class="card cams">
-      <div class="card-head">
-        <h2>Flux en direct</h2>
-        <span class="muted" id="cams-sub">Caméras RGB · vue plongeante</span>
-      </div>
-      <div class="cam-grid" id="cam-grid"></div>
-      <div class="thermal">
-        <div class="cam-tile thermal-img">
-          <img id="img-thermal" alt="Caméra thermique">
-          <span class="cam-label"><i class="dot" id="dot-thermal"></i>Thermique</span>
-          <span class="cam-off" id="off-thermal">Hors ligne</span>
-        </div>
-        <div class="thermal-info">
-          <h3>Caméra thermique 80×60</h3>
-          <dl>
-            <div><dt>Mode</dt><dd id="th-mode">—</dd></div>
-            <div><dt>Pixels chauds</dt><dd id="th-px">—</dd></div>
-            <div><dt>T° max</dt><dd id="th-tmax">—</dd></div>
-          </dl>
-          <p class="muted small">Contour blanc = zone au-dessus du seuil. Calibrer le seuil dans
-            <code>config.json</code> avec un essai à vide puis un essai avec la poupée chauffée.</p>
-        </div>
-      </div>
-    </div>
+    <div class="live">
+      <!-- Verdict du dernier essai : reste affiché jusqu'au suivant -->
+      <section id="verdict" class="verdict" hidden aria-live="polite" aria-label="Verdict du dernier essai"></section>
 
-    <div class="side">
-      <div class="card ref" id="ref">
-        <div class="card-head"><h2>Référence habitacle vide</h2><span class="muted" id="ref-etat">—</span></div>
-        <p class="muted small">Habitacle vide, portes fermées, puis capturer. Les objets fixes (boucle de ceinture,
-          console…) sont ensuite ignorés et tout ce qui apparaît en plus est signalé, même non reconnu.</p>
-        <div class="ref-actions">
-          <button class="btn btn-secondary" type="button" id="btn-ref">Capturer la référence</button>
-          <button class="btn btn-link" type="button" id="btn-ref-del" hidden>Effacer</button>
+      <div class="card cams">
+        <div class="card-head">
+          <h2>Flux en direct</h2>
+          <span class="muted" id="cams-sub">Caméras RGB · vue plongeante</span>
         </div>
-        <div class="ref-thumbs" id="ref-thumbs"></div>
-      </div>
-
-      <div class="card surv" id="surv">
-        <div class="card-head"><h2>Surveillance automatique</h2><span class="muted" id="surv-sous">désarmée</span></div>
-        <ol class="surv-etapes" id="surv-etapes" aria-label="État de la surveillance">
-          <li data-e="veille">Veille</li><li data-e="occupe">Occupé</li><li data-e="sortie">Sortie</li>
-          <li data-e="analyse">Analyse</li><li data-e="alerte">Alerte</li>
-        </ol>
-        <div class="surv-banniere" id="surv-banniere" hidden></div>
-        <p class="muted small" id="surv-aide">Habitacle vide, armer : la référence est capturée. Le conducteur
-          monte, pose ses affaires, descend : l'analyse part seule après le délai de sortie. Le scénario, la
-          variante et la vérité terrain du formulaire ci-dessous sont utilisés pour journaliser l'essai.</p>
-        <div class="surv-actions">
-          <button class="btn btn-secondary" type="button" id="btn-armer">Armer</button>
-          <button class="btn btn-secondary" type="button" id="btn-verrou" hidden title="Simule l'événement « véhicule verrouillé » : analyse immédiate">Verrouiller</button>
-          <button class="btn btn-link" type="button" id="btn-desarmer" hidden>Désarmer</button>
-        </div>
-        <div class="surv-actions" id="surv-demo" hidden>
-          <button class="btn btn-link" type="button" data-occupant="1">Démo : le conducteur monte</button>
-          <button class="btn btn-link" type="button" data-occupant="0">descend</button>
-        </div>
-        <ul class="surv-histo" id="surv-histo"></ul>
-      </div>
-
-      <form class="card" id="form-essai">
-        <div class="card-head"><h2>Nouvel essai</h2><span class="muted" id="compteur"></span></div>
-        <label>Scénario
-          <select id="f-scenario" required></select>
-        </label>
-        <label>Variante
-          <select id="f-variante"></select>
-        </label>
-        <fieldset>
-          <legend>Vérité terrain</legend>
-          <div class="seg" id="f-verite">
-            <button type="button" data-v="vivant">Vivant</button>
-            <button type="button" data-v="objet">Objet de valeur</button>
-            <button type="button" data-v="vide">Rien à signaler</button>
+        <div class="cam-grid" id="cam-grid"></div>
+        <div class="thermal" id="thermal" hidden>
+          <div class="cam-tile thermal-img">
+            <img id="img-thermal" alt="Caméra thermique">
+            <span class="cam-label"><i class="dot" id="dot-thermal"></i>Thermique</span>
+            <span class="cam-off" id="off-thermal">Hors ligne</span>
           </div>
-        </fieldset>
-        <label>Commentaire <span class="muted">(optionnel)</span>
-          <input id="f-commentaire" placeholder="ex. poupée côté porte, store baissé">
-        </label>
-        <button class="btn btn-primary" id="btn-lancer" type="submit">
-          <span class="spinner" hidden></span><span class="txt">Lancer l'analyse</span>
-        </button>
-        <p class="muted small">Portes fermées, conducteur sorti, puis lancer.</p>
-      </form>
-
-      <div class="card result" id="result">
-        <div class="card-head"><h2>Dernier résultat</h2></div>
-        <div id="result-body" class="empty">Aucun essai pour l'instant.</div>
+          <div class="thermal-info">
+            <h3>Caméra thermique 80×60</h3>
+            <dl>
+              <div><dt>Mode</dt><dd id="th-mode">—</dd></div>
+              <div><dt>Pixels chauds</dt><dd id="th-px">—</dd></div>
+              <div><dt>T° max</dt><dd id="th-tmax">—</dd></div>
+            </dl>
+            <p class="muted small">Contour blanc = zone au-dessus du seuil (réglage dans <code>config.json</code>).</p>
+          </div>
+        </div>
       </div>
     </div>
+
+    <aside class="side">
+      <form class="card pilot" id="pilot" novalidate>
+        <div class="card-head"><h2>Pilotage de l'essai</h2><span class="muted" id="compteur"></span></div>
+
+        <div class="seg seg-2 mode" id="f-mode" role="group" aria-label="Mode d'essai">
+          <button type="button" data-m="auto" aria-pressed="true">Automatique</button>
+          <button type="button" data-m="manuel" aria-pressed="false">Manuel</button>
+        </div>
+
+        <fieldset id="f-contexte">
+          <label>Scénario
+            <select id="f-scenario" required></select>
+          </label>
+          <label>Variante
+            <select id="f-variante"></select>
+          </label>
+          <div class="field">
+            <span class="field-label" id="lbl-verite">Vérité terrain</span>
+            <div class="seg" id="f-verite" role="group" aria-labelledby="lbl-verite">
+              <button type="button" data-v="vivant" aria-pressed="false">Vivant</button>
+              <button type="button" data-v="objet" aria-pressed="false">Objet de valeur</button>
+              <button type="button" data-v="vide" aria-pressed="false">Rien à signaler</button>
+            </div>
+          </div>
+          <div class="field" id="bloc-objets" hidden>
+            <span class="field-label" id="lbl-objets">Objet(s) posé(s)</span>
+            <div class="chips" id="f-objets" role="group" aria-labelledby="lbl-objets"></div>
+          </div>
+          <label><span>Commentaire <span class="muted">(optionnel)</span></span>
+            <input id="f-commentaire" placeholder="ex. téléphone sous le siège, store baissé">
+          </label>
+        </fieldset>
+
+        <button class="btn btn-primary" id="btn-principal" type="submit">
+          <span class="spinner" hidden></span><span class="txt">Armer la surveillance</span>
+        </button>
+        <p class="aide" id="aide-mode"></p>
+        <p class="msg-erreur" id="pilot-erreur" role="alert" hidden></p>
+
+        <!-- Surveillance automatique : progression dans la carte -->
+        <div class="surv" id="surv" hidden>
+          <ol class="surv-etapes" id="surv-etapes" aria-label="Progression de la surveillance">
+            <li data-e="veille">Veille</li><li data-e="occupe">Occupé</li><li data-e="sortie">Sortie</li>
+            <li data-e="analyse">Analyse</li><li data-e="alerte">Alerte</li>
+          </ol>
+          <div class="surv-statut" id="surv-statut" aria-live="polite"></div>
+          <div class="surv-actions">
+            <button class="btn btn-secondary" type="button" id="btn-verrou" title="Simule le verrouillage du véhicule : analyse immédiate">Verrouiller</button>
+            <button class="btn btn-secondary btn-quiet" type="button" id="btn-desarmer">Désarmer</button>
+          </div>
+          <div class="surv-actions surv-demo" id="surv-demo" hidden>
+            <span class="muted small">Démo :</span>
+            <button class="btn btn-link" type="button" data-occupant="1">le conducteur monte</button>
+            <button class="btn btn-link" type="button" data-occupant="0">le conducteur descend</button>
+          </div>
+          <details class="evts">
+            <summary>Journal des événements</summary>
+            <ul class="surv-histo" id="surv-histo"></ul>
+          </details>
+        </div>
+
+        <details class="ref" id="ref">
+          <summary>Voir / recapturer la référence <span class="muted" id="ref-etat"></span></summary>
+          <p class="muted small">Image de l'habitacle vide, capturée à chaque armement. Ce qui y figure déjà
+            (boucle de ceinture, console…) est ignoré ; tout ce qui apparaît en plus est signalé.</p>
+          <div class="ref-thumbs" id="ref-thumbs"></div>
+          <div class="ref-actions">
+            <button class="btn btn-secondary btn-quiet" type="button" id="btn-ref">Recapturer maintenant</button>
+            <button class="btn btn-link" type="button" id="btn-ref-del" hidden>Effacer</button>
+          </div>
+        </details>
+      </form>
+    </aside>
   </section>
 
-  <!-- ===== Indicateurs ===== -->
-  <section class="kpis" id="kpis"></section>
+  <!-- ===== Indicateurs clés ===== -->
+  <section class="kpis" id="kpis" aria-label="Indicateurs clés"></section>
 
-  <!-- ===== Par scénario ===== -->
+  <!-- ===== Détail des résultats ===== -->
+  <h2 class="section-titre">Détail des résultats</h2>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Détection par objet</h2>
+      <div class="legend" id="legend-objets">
+        <span><i class="sw sw-id"></i>Identifié par son nom</span>
+        <span><i class="sw sw-sig"></i>Signalé (y compris « objet non identifié »)</span>
+      </div>
+    </div>
+    <div id="par-objet"></div>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <h2>Résultats par scénario</h2>
       <div class="legend">
         <span><i class="sw sw-a1"></i>A1 · RGB seul</span>
-        <span><i class="sw sw-a2"></i>A2 · RGB + thermique</span>
+        <span id="legend-a2"><i class="sw sw-a2"></i>A2 · RGB + thermique</span>
       </div>
     </div>
     <p class="muted small">Scénarios « vivant » : rappel (présences détectées). Autres scénarios : taux de bonne non-alerte.</p>
     <div id="chart" class="chart"></div>
   </section>
 
-  <!-- ===== Historique ===== -->
   <section class="card">
     <div class="card-head">
-      <h2>Historique des essais</h2>
-      <span class="muted" id="nb-essais"></span>
+      <h2>Historique des essais <span class="muted" id="nb-essais"></span></h2>
+      <div class="seg seg-3 filtre" id="f-filtre" role="group" aria-label="Filtrer par mode">
+        <button type="button" data-f="tous" aria-pressed="true">Tous</button>
+        <button type="button" data-f="auto" aria-pressed="false">Auto</button>
+        <button type="button" data-f="manuel" aria-pressed="false">Manuel</button>
+      </div>
     </div>
     <div class="table-wrap">
       <table id="table">
         <thead><tr>
-          <th>Heure</th><th>Scénario</th><th>Variante</th><th>Vérité</th>
-          <th>RGB</th><th>Thermique</th><th>A1</th><th>A2</th><th>Objets</th><th title="Zones nouvelles par rapport à la référence">Zones</th>
-          <th class="num">Latence</th><th>Images</th><th></th>
+          <th>Heure</th><th>Mode</th><th>Scénario</th><th>Vérité</th><th>Objets posés</th>
+          <th>Détecté</th><th>Alerte</th><th>A1</th><th class="col-a2">A2</th>
+          <th class="num" title="Zones nouvelles par rapport à la référence">Zones</th>
+          <th class="num" title="Durée de l'analyse">Analyse</th>
+          <th class="num" title="Départ du conducteur → verdict (essais automatiques)">Latence alerte</th>
+          <th>Image</th><th><span class="sr">Supprimer</span></th>
         </tr></thead>
         <tbody></tbody>
       </table>
