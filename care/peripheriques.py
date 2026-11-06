@@ -50,6 +50,80 @@ def lister() -> list[dict] | None:
     return out
 
 
+def lister_msmf() -> list[dict] | None:
+    """[{index, nom}] des caméras dans l'ordre des index OpenCV du backend Media Foundation
+    (cv2.CAP_MSMF), qui N'EST PAS celui de DirectShow. None hors Windows ou en cas d'échec.
+    Utile pour la thermique : seul MSMF donne son flux brut (les températures)."""
+    if os.name != "nt":
+        return None
+    try:
+        return _enumerer_msmf()
+    except Exception:  # noqa: BLE001 — Media Foundation absent (Windows N…)
+        return None
+
+
+def _enumerer_msmf():
+    import ctypes
+    import uuid
+    from ctypes import POINTER, byref, c_void_p, wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("octets", ctypes.c_ubyte * 16)]
+
+    def guid(s):
+        g = GUID()
+        ctypes.memmove(g.octets, uuid.UUID(s).bytes_le, 16)
+        return g
+
+    def methode(objet, rang, *types):  # appel COM « à la main » : n-ième entrée de la vtable
+        vtable = ctypes.cast(objet, POINTER(POINTER(c_void_p))).contents
+        return ctypes.WINFUNCTYPE(ctypes.c_long, c_void_p, *types)(vtable[rang])
+
+    ole32, mfplat, mf = ctypes.windll.ole32, ctypes.windll.mfplat, ctypes.windll.mf
+    ole32.CoInitializeEx(None, 0)          # déjà initialisé dans ce thread : sans effet
+    mfplat.MFStartup(0x00020070, 0)
+    attr = c_void_p()
+    if mfplat.MFCreateAttributes(byref(attr), 1):
+        return None
+    try:
+        cle = guid("c60ac5fe-252a-478f-a0ef-bc8fa5f7cad3")      # MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE
+        video = guid("8ac3587a-4ae7-42d8-99e0-0a6013eef90f")    # …_SOURCE_TYPE_VIDCAP_GUID
+        methode(attr, 24, c_void_p, c_void_p)(attr, byref(cle), byref(video))   # SetGUID
+        tableau, n = c_void_p(), ctypes.c_uint32()
+        if mf.MFEnumDeviceSources(attr, byref(tableau), byref(n)):
+            return None
+        nom = guid("60d0e559-52f8-4fa2-bbce-acdb34a8ec01")      # MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME
+        devs = ctypes.cast(tableau, POINTER(c_void_p))
+        out = []
+        for i in range(n.value):
+            s, lg = wintypes.LPWSTR(), ctypes.c_uint32()
+            hr = methode(devs[i], 13, c_void_p, c_void_p, c_void_p)(devs[i], byref(nom), byref(s),
+                                                                    byref(lg))  # GetAllocatedString
+            out.append({"index": i, "nom": s.value if hr == 0 else ""})
+            if hr == 0:
+                ole32.CoTaskMemFree(s)
+            methode(devs[i], 2)(devs[i])   # Release
+        ole32.CoTaskMemFree(tableau)
+        return out
+    finally:
+        methode(attr, 2)(attr)
+
+
+def index_msmf(index_dshow, dshow=None, msmf=None):
+    """Index Media Foundation de la caméra vue à `index_dshow` sous DirectShow (même nom ;
+    à nom égal, même rang). None si on ne peut pas faire la correspondance."""
+    dshow = lister() if dshow is None else dshow
+    msmf = lister_msmf() if msmf is None else msmf
+    if not dshow or not msmf:
+        return None
+    nom = next((d["nom"] for d in dshow if d["index"] == index_dshow), None)
+    if nom is None:
+        return None
+    rang = [d["index"] for d in dshow if d["nom"] == nom].index(index_dshow)
+    memes = [d["index"] for d in msmf if d["nom"] == nom]
+    return memes[rang] if rang < len(memes) else None
+
+
 def _contient(nom: str, morceaux) -> bool:
     n = (nom or "").lower()
     return any(m.lower() in n for m in morceaux)

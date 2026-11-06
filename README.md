@@ -158,12 +158,19 @@ python outils/evaluer.py --donnees datasets/care-oubli-v1/data.yaml --moteurs yo
 
 ## Calibrer la thermique
 
-La caméra thermique est une **Topdon TC001** (256×192, radiométrique) : le banc lit ses
-températures brutes (`thermique.modele = "tc001"`). Vérifier qu'elles sont bien lues,
-dashboard arrêté : `python outils/diag_thermique.py` (main devant la caméra : la max doit
-monter vers 30-35 °C). Il indique l'index et le `backend` à reporter dans `config.local.json`.
-Dans le dashboard, le panneau doit afficher le mode « radiométrique (TC001) » : « 8 bits »
-veut dire que les températures ne sont pas lues et le seuil ne veut rien dire.
+La caméra thermique du banc s'annonce « UVC Camera » (USB 2BDF:0102, capteur 256×192 de la
+famille InfiRay). Ce n'est pas une TC001 : son flux 256×392 contient des **comptes bruts du capteur**,
+pas des températures. Le banc les lit en mode **relatif** : un pixel est chaud s'il dépasse le fond
+de la scène de `thermique.seuil_comptes` (200 par défaut, à calibrer). Une vraie Topdon TC001
+(flux 256×384, températures en °C) reste gérée : `thermique.resolution = [256, 384]`.
+
+Sous Windows, le flux brut n'est lisible qu'avec Media Foundation (`thermique.backend = "msmf"`) :
+DirectShow le convertit en couleur et les données sont perdues (le banc n'alerte alors plus, au lieu
+d'alerter en permanence). Vérifier, dashboard arrêté : `python outils/diag_thermique.py`.
+Dans le dashboard, le panneau doit afficher « relatif (comptes bruts) » ou « radiométrique (TC001) ».
+
+**Calibrer `seuil_comptes`** : habitacle vide (hub USB et PC hors du champ), le nombre de pixels
+chauds doit rester ~0 ; avec la poupée chauffée ou une main, il doit dépasser `pixels_chauds_min`.
 
 Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le nombre de pixels chauds et la T° max.
 

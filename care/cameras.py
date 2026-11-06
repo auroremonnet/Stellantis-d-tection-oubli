@@ -12,6 +12,8 @@ import time
 import cv2
 import numpy as np
 
+from care import peripheriques
+
 BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
 
 
@@ -95,28 +97,72 @@ class Source:
                 "ok": self.ok and time.time() - self.stamp < 3, "erreur": self.erreur}
 
 
-# Topdon TC001 (256x192) : le flux UVC fait 256x384 en YUYV. Moitié haute = image déjà
-# colorisée par la caméra (gain automatique, inutilisable pour un seuil) ; moitié basse =
-# températures brutes, 2 octets par pixel (petit-boutiste), T(°C) = brut / 64 - 273,15.
-# Il faut lire le flux SANS conversion RGB d'OpenCV, sinon la moitié basse devient des rayures.
+# Caméras thermiques 256x192 de la famille InfiRay (Topdon TC001, InfiRay P2 Pro, modules
+# « UVC Camera »…). Le flux UVC est en YUYV (2 octets par pixel) et empile deux blocs :
+#   - un bloc IMAGE : YUYV ordinaire, gain automatique (inutilisable pour un seuil) ;
+#   - un bloc DONNÉES : un entier 16 bits petit-boutiste par pixel.
+# Deux dispositions connues :
+#   256x384 (TC001 / P2 Pro)   image en haut, données en bas = températures, brut/64 - 273,15
+#   256x392 (caméra du banc,   données en haut (lignes 0-191), 4 lignes de métadonnées, image
+#    « UVC Camera »,           (196-387), 4 lignes de métadonnées. Les données sont des COMPTES
+#    USB 2BDF:0102)            BRUTS du capteur (~5 000, non calibrés), pas des températures :
+#                              on compare chaque pixel au fond de la scène (mode « relatif »).
+# Le flux doit être lu SANS conversion RGB d'OpenCV : sous Windows, seul Media Foundation
+# (thermique.backend = "msmf") le donne brut, DirectShow le convertit toujours en couleur
+# (les données deviennent des rayures vertes). Diagnostic : outils/diag_thermique.py.
 TC001_L, TC001_H = 256, 192
+_HAUTEURS = (384, 392)
+
+
+def _blocs(a, h):
+    """(lignes données, lignes image) pour une trame de hauteur h."""
+    if h == 384:
+        return slice(TC001_H, 2 * TC001_H), slice(0, TC001_H)
+    return slice(0, TC001_H), slice(h // 2, h // 2 + TC001_H)
+
+
+def decoder_trame(f):
+    """Trame brute InfiRay → (données uint16 192x256, image grise uint8 192x256), ou None si
+    la trame a été convertie en couleur (données perdues) ou n'a pas une forme connue."""
+    a = np.asarray(f)
+    if a.dtype != np.uint8 or (a.ndim == 3 and a.shape[2] == 3) or a.size % (TC001_L * 2):
+        return None
+    h = a.size // (TC001_L * 2)
+    if h not in _HAUTEURS:
+        return None
+    a = a.reshape(h, TC001_L, 2)
+    donnees, image = _blocs(a, h)
+    d = a[donnees]
+    return d[..., 0].astype(np.uint16) | (d[..., 1].astype(np.uint16) << 8), a[image, :, 0].copy()
+
+
+def brut_en_celsius(brut):
+    """Températures si les données en sont (TC001 : brut/64 - 273,15), sinon None (comptes bruts)."""
+    t = brut.astype(np.float32) / 64 - 273.15
+    return t if -30 < float(np.median(t)) < 120 else None
 
 
 def decoder_tc001(f):
-    """Températures (°C, 192x256) d'une image brute TC001, ou None si l'image a été convertie
-    en couleur par le pilote (températures perdues)."""
+    """Températures (°C, 192x256) d'une trame brute, ou None (convertie en couleur, ou données
+    non radiométriques)."""
+    d = decoder_trame(f)
+    return None if d is None else brut_en_celsius(d[0])
+
+
+def image_visible(f):
+    """Image grise 192x256 d'une trame InfiRay, brute ou convertie en couleur (aperçu)."""
     a = np.asarray(f)
-    if a.dtype != np.uint8 or a.size != TC001_L * TC001_H * 2 * 2:
-        return None
-    if a.ndim == 3 and a.shape[2] == 3:
-        return None
-    brut = a.reshape(TC001_H * 2, TC001_L, 2)[TC001_H:]
-    return (brut[..., 0].astype(np.float32) + brut[..., 1].astype(np.float32) * 256) / 64 - 273.15
+    d = decoder_trame(a)
+    if d is not None:
+        return d[1]
+    h = a.size // (TC001_L * 3)
+    _, image = _blocs(None, h)
+    return cv2.cvtColor(a.reshape(h, TC001_L, 3)[image], cv2.COLOR_BGR2GRAY)
 
 
 def est_tc001(f):
     a = np.asarray(f)
-    return a.size in (TC001_L * TC001_H * 4, TC001_L * TC001_H * 6) and a.dtype == np.uint8
+    return a.dtype == np.uint8 and a.size in [TC001_L * h * c for h in _HAUTEURS for c in (2, 3)]
 
 
 class SourceThermique(Source):
@@ -130,12 +176,26 @@ class SourceThermique(Source):
         self.mode = "?"
 
     def _ouvrir(self):
+        nom_backend = self.params.get("backend", "")
+        if nom_backend == "msmf" and os.name != "nt":
+            nom_backend = ""
         backend = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2}.get(
-            self.params.get("backend", ""), BACKEND)
-        cap = cv2.VideoCapture(self.index, backend)
+            nom_backend, BACKEND)
+        index = self.index
+        if nom_backend == "msmf" and isinstance(index, int):
+            # self.index est l'index DirectShow (lister_cameras.py, config) ; MSMF numérote
+            # autrement (sur le banc : DirectShow 0 = MSMF 1, et MSMF 0 = la webcam du PC !)
+            index = peripheriques.index_msmf(index)
+            if index is None:
+                return _CapFermee()
+        cap = cv2.VideoCapture(index, backend)
         if self.modele == "lepton":
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"Y16 "))
         cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)   # flux brut : indispensable pour les températures
+        res = self.params.get("resolution")
+        if res:  # mode du flux : 256x392 sur le banc (données + image), 256x384 pour une TC001
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, res[0])
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res[1])
         return cap
 
     @staticmethod
@@ -147,14 +207,33 @@ class SourceThermique(Source):
         """Retourne (masque des pixels chauds, image 8 bits, température max ou None)."""
         p = self.params
         if self.modele in ("auto", "tc001") and est_tc001(f):
-            temp = decoder_tc001(f)
+            d = decoder_trame(f)
+            if d is None:
+                # converti en couleur par le pilote : il ne reste qu'une image à gain automatique,
+                # dont les pixels les plus clairs sont toujours « chauds » → aucune alerte plutôt
+                # qu'une alerte permanente. Remède : thermique.backend = "msmf".
+                self.mode = "8 bits (flux converti, températures perdues : pas de détection)"
+                g = image_visible(f)
+                return np.zeros(g.shape, bool), g, None
+            brut, _ = d
+            temp = brut_en_celsius(brut)
             if temp is not None:
                 self.mode = "radiométrique (TC001)"
                 return temp > p["seuil_celsius"], self._echelle(temp), float(temp.max())
-            # le pilote a converti en couleur : seule l'image colorisée (moitié haute) reste
-            self.mode = "8 bits (TC001 converti, températures perdues)"
-            g = cv2.cvtColor(np.asarray(f).reshape(TC001_H * 2, TC001_L, 3)[:TC001_H], cv2.COLOR_BGR2GRAY)
-            return g > p["seuil_8bit"], g, None
+            # comptes bruts non calibrés : chaud = nettement au-dessus du fond de la scène. Le
+            # fond (centile bas) est recalculé à chaque image, ce qui suit la dérive du capteur.
+            seuil = p.get("seuil_comptes", 200)
+            fond = float(np.percentile(brut, p.get("centile_fond", 10)))
+            ecart = brut.astype(np.float32) - fond
+            self.mode = "relatif (comptes bruts, non calibré)"
+            img = np.clip(ecart * (255 / (2 * seuil)), 0, 255).astype(np.uint8)
+            return ecart > seuil, img, None
+        if self.modele == "tc001":
+            # forme inattendue (ex. 644x384, mode par défaut de la caméra du banc) : illisible
+            self.mode = f"format {f.shape[1]}x{f.shape[0]} illisible (thermique.resolution ?)"
+            g = (cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 and f.dtype == np.uint8
+                 else np.zeros(f.shape[:2], np.uint8))
+            return np.zeros(g.shape, bool), g, None
         if f.dtype == np.uint16:
             self.mode = "radiométrique"
             temp = f.astype(np.float32) / 100.0 - 273.15  # Lepton, format TLinear (centi-Kelvin)
@@ -254,3 +333,10 @@ class _FauxCap:
 
     def release(self):
         pass
+
+
+class _CapFermee(_FauxCap):
+    """Caméra introuvable (ex. pas de correspondance DirectShow → Media Foundation)."""
+
+    def isOpened(self):
+        return False

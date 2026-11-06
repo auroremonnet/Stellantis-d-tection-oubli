@@ -18,7 +18,7 @@ import sys
 import cv2
 
 from care import peripheriques
-from care.cameras import est_tc001
+from care.cameras import est_tc001, image_visible
 
 RACINE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
@@ -84,9 +84,8 @@ def main():
     for d in sorted(trouvees, key=lambda d: d["genre"] == "webcam du PC"):
         titre = f"index {d['index']} - {d['nom'] or '?'}"
         img = d["image"]
-        if est_tc001(img):  # flux brut TC001 : afficher l'image (moitié haute)
-            brut = img.size == 256 * 384 * 2
-            img = img.reshape(384, 256, 2)[:192, :, 0] if brut else img.reshape(384, 256, 3)[:192]
+        if est_tc001(img):  # flux thermique InfiRay / TC001 : n'afficher que le bloc image
+            img = image_visible(img)
         if img.ndim == 2 or img.dtype != "uint8":
             img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
         cv2.imshow(titre, img)
