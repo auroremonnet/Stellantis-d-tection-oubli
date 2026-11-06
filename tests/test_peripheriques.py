@@ -57,3 +57,18 @@ def test_noms_illisibles_retombe_sur_les_index_apres_la_webcam():
     assert "supposé" in r[0]["probleme"]
     r, _ = resoudre(rgb(2, "auto"), None, None)
     assert r[0]["source"] == 2 and not r[0]["probleme"] and r[1]["source"] == 1
+
+
+def test_webcam_1080p_fhd_du_pc_ecartee():
+    """Le PC du banc : sa webcam s'appelle « 1080p FHD Camera » (index 4)."""
+    import json
+    from pathlib import Path
+    cfg = json.loads(Path(__file__).parent.parent.joinpath("config.json").read_text("utf-8"))
+    banc = [{"index": 0, "nom": "UVC Camera"}, {"index": 1, "nom": "USB Camera"},
+            {"index": 2, "nom": "USB Camera"}, {"index": 3, "nom": "USB Camera"},
+            {"index": 4, "nom": "1080p FHD Camera"}, {"index": 5, "nom": "USB Camera"}]
+    th = {"id": "thermal", "index": 0, "nom": "UVC Camera", "label": "Thermique", "active": True}
+    r, t = resoudre(rgb("auto", "auto", "auto", "auto"), th, banc, cfg["cameras"])
+    assert [c["source"] for c in r] == [1, 2, 3, 5] and t["source"] == 0
+    r, _ = resoudre(rgb(4), None, banc, cfg["cameras"])
+    assert "webcam du PC" in r[0]["probleme"]
