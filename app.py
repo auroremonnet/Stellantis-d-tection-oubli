@@ -16,8 +16,10 @@ from threading import Timer
 import cv2
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file, send_from_directory
 
+from care import peripheriques
 from care.alertes import Alerteur
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
+from care.collecte import Collecteur
 from care.decision import decider
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.reference import Reference
@@ -52,15 +54,26 @@ EVENEMENTS = os.path.join(DATA, "evenements.jsonl")
 VERITES = ("vivant", "objet", "vide")
 
 # ---- Matériel ------------------------------------------------------------
-ClsRGB, ClsTh = (SourceDemo, SourceThermiqueDemo) if DEMO else (Source, SourceThermique)
-RGB = [ClsRGB(c["id"], c["index"], c["label"], CFG["resolution"]).demarrer() for c in CFG["cameras_rgb"]]
-cth = CFG["camera_thermique"]
-THERM = ClsTh(cth["id"], cth["index"], cth["label"], CFG["thermique"]).demarrer() if cth.get("active") else None
+if DEMO:
+    RGB = [SourceDemo(c["id"], i, c["label"], CFG["resolution"]).demarrer()
+           for i, c in enumerate(CFG["cameras_rgb"])]
+    cth = CFG["camera_thermique"]
+    THERM = SourceThermiqueDemo(cth["id"], 0, cth["label"], CFG["thermique"]).demarrer() if cth.get("active") else None
+else:
+    # chaque position → un périphérique réel, par nom ; la webcam du PC est écartée
+    _rgb, _th = peripheriques.resoudre(CFG["cameras_rgb"], CFG["camera_thermique"],
+                                       peripheriques.lister(), CFG.get("cameras"))
+    print(peripheriques.rapport(_rgb, _th))
+    RGB = [Source(c["id"], c["source"], c["label"], CFG["resolution"], c["peripherique"],
+                  c["probleme"]).demarrer() for c in _rgb]
+    THERM = (SourceThermique(_th["id"], _th["source"], _th["label"], CFG["thermique"],
+                             _th["peripherique"], _th["probleme"]).demarrer() if _th else None)
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
 REF_PARAMS = {"iou_fixe": 0.5, "seuil_changement": 35, "aire_min": 1500, "part_max_image": 0.6, "zones_max": 6}
 REF_PARAMS.update(CFG.get("reference", {}))
 REFERENCE = Reference(os.path.join(DATA, "reference"), REF_PARAMS)
+COLLECTEUR = Collecteur(os.path.join(DATA, "collecte"), RGB)   # images pour le dataset v2
 
 CFG_ALERTES = dict(CFG.get("alertes", {}))
 if os.environ.get("CARE_NTFY_TOPIC"):  # le topic ntfy fait office de mot de passe
@@ -240,6 +253,34 @@ def config():
     out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele,
                         "prompts_vivant": DETECTEUR.prompts_vivant, "prompts_valeur": DETECTEUR.prompts_valeur}
     return jsonify(out)
+
+
+@app.route("/api/collecte")
+def collecte_etat():
+    return jsonify(COLLECTEUR.resume())
+
+
+@app.route("/api/collecte", methods=["POST"])
+def collecte_lancer():
+    d = request.get_json(force=True, silent=True) or {}
+    etiquette = (d.get("etiquette") or "").strip()
+    if not etiquette:
+        return jsonify({"erreur": "Indiquer ce qui est dans la scène (ex. clés console centrale)"}), 400
+    try:
+        prises = max(1, min(int(d.get("prises", 10)), 200))
+        intervalle = max(0.3, min(float(d.get("intervalle_s", 1.5)), 30.0))
+    except (TypeError, ValueError):
+        return jsonify({"erreur": "Nombre de prises ou intervalle invalide"}), 400
+    if not COLLECTEUR.demarrer(etiquette=etiquette, prises=prises, intervalle_s=intervalle,
+                               variante=d.get("variante", ""), commentaire=d.get("commentaire", "")):
+        return jsonify({"erreur": "Une rafale est déjà en cours"}), 409
+    return jsonify(COLLECTEUR.resume())
+
+
+@app.route("/api/collecte", methods=["DELETE"])
+def collecte_arreter():
+    COLLECTEUR.arreter()
+    return jsonify(COLLECTEUR.resume())
 
 
 @app.route("/api/reference", methods=["POST"])

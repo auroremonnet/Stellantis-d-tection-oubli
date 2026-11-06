@@ -9,12 +9,26 @@ Banc de test et dashboard pour comparer **A1 (RGB seul)** et **A2 (RGB + thermiq
 - `lancer_demo.bat` : **mode démo**, sans matériel (flux et détections simulés). Utile pour prendre l'outil en main ou le montrer.
 - En ligne de commande : `python app.py` ou `python app.py --demo`.
 
-## Brancher le matériel
+## Brancher le matériel (dans la voiture)
 
-1. Brancher les 4 caméras RGB et la thermique sur le hub USB actif.
-2. Lancer `python lister_cameras.py` : une fenêtre par caméra s'ouvre et affiche son index.
-3. Reporter ces index dans `config.json` (`cameras_rgb`, `camera_thermique`).
+Le dashboard se branche sur les **4 caméras de la voiture**, jamais sur la webcam du PC :
+les caméras sont choisies par leur **nom** (lu via `pygrabber` sous Windows, installé par
+`lancer.bat`), et tout ce qui ressemble à une webcam intégrée (« Integrated », « Webcam »,
+« FaceTime »…, liste dans `config.json` → `cameras.exclure`) est écarté.
+
+1. Brancher les 4 caméras RGB et la thermique sur le hub USB actif, hub branché au PC.
+2. Lancer `python lister_cameras.py` : il liste les caméras (la webcam du PC est signalée),
+   ouvre un aperçu de chacune et demande la position filmée (1 = avant gauche… ; t = thermique ;
+   Entrée = ignorer). Le résultat va dans `config.local.json` (propre au PC, hors git).
+3. Lancer le dashboard : au démarrage, le terminal affiche quelle caméra filme quelle position.
+   Dans le dashboard, survoler un flux affiche le périphérique ; une pastille orange signale
+   un problème (webcam prise par erreur, index qui ont bougé…).
 4. Si une caméra ne s'affiche pas, passer `resolution` à `[640, 360]` : le hub sature avec 4 flux 720p.
+
+Sans l'assistant, `"index": "auto"` (valeur par défaut) prend les caméras libres hors webcam,
+dans l'ordre : les 4 flux s'affichent, mais **les positions peuvent être mélangées**. Après un
+débranchement / rebranchement sur d'autres ports, relancer `lister_cameras.py`.
+Une caméra IP (si la voiture en a) se déclare avec `"url": "rtsp://…"` à la place de `index`.
 
 ## Déroulé d'un essai
 
@@ -29,6 +43,24 @@ Chaque essai enregistre **séparément** le verdict RGB et le verdict thermique.
 |---|---|
 | A1 | Le détecteur voit une personne, un enfant, un chat ou un chien sur au moins une caméra |
 | A2 | A1 **ou** la thermique voit une zone chaude (fusion OU, qui maximise le rappel) |
+
+## Collecte d'images pour le dataset (v2)
+
+Carte **Collecte dataset** du dashboard : indiquer ce qui est dans la scène (« clés console
+centrale », « bébé siège auto », « vide »…), le nombre de prises et l'intervalle, puis
+**Lancer la rafale**. Entre deux prises, déplacer l'objet / la poupée ou changer la lumière.
+Les images identiques à la précédente (scène qui n'a pas bougé) sont écartées.
+
+Images dans `data/essais/collecte/<jour>/<scène>/` (hors git : ce sont des photos de la
+voiture), avec un `manifeste.csv`. Ensuite :
+
+```
+python outils/preparer_lot.py
+```
+
+→ un lot `datasets/lot-…zip` **pré-annoté par le modèle actuel**, à glisser dans Roboflow :
+on corrige les boîtes au lieu de tout dessiner. Méthode complète :
+[`entrainement/README.md`](entrainement/README.md#v2--peaufiner-avec-nos-images-de-la-voiture).
 
 ## Surveillance automatique : simuler l'oubli de bout en bout
 
@@ -146,9 +178,11 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 ```
 app.py               serveur Flask + API
 config.json          caméras, détection (moteur, prompts, seuils), référence, scénarios, variantes
-config_5cameras.json configuration complète 4 RGB + thermique (à recopier dans config.json le jour J)
-lister_cameras.py    trouver les index des caméras
+config_5cameras.json copie de référence de la configuration 4 RGB + thermique
+lister_cameras.py    assistant : quelle caméra filme quelle position → config.local.json
 care/cameras.py      acquisition (1 thread par caméra) + sources démo
+care/peripheriques.py caméra physique ↔ position (par nom, webcam du PC écartée)
+care/collecte.py     rafales d'images brutes pour le dataset (doublons écartés)
 care/detecteur.py    YOLOE / COCO / hybride, zoom sur zones nouvelles, seuil thermique, fusion
 care/reference.py    référence habitacle vide : détections fixes à ignorer, zones nouvelles
 care/surveillance.py machine à états de la surveillance automatique + boucle de fond
@@ -158,6 +192,7 @@ care/metriques_detection.py  précision / rappel boîte par boîte, tous moteurs
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
 entrainement/        entraînement du modèle (script + notebook Colab)
 outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté
+outils/preparer_lot.py lot Roboflow pré-annoté à partir des images collectées
 tests/               tests automatiques (pytest)
 templates/, static/  dashboard + page de suivi pour téléphone (/suivi)
 ```

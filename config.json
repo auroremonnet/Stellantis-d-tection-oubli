@@ -2,30 +2,55 @@
   "cameras_rgb": [
     {
       "id": "rgb0",
-      "index": 1,
+      "index": "auto",
       "label": "Avant gauche"
     },
     {
       "id": "rgb1",
-      "index": 2,
+      "index": "auto",
       "label": "Avant droite"
     },
     {
       "id": "rgb2",
-      "index": 3,
+      "index": "auto",
       "label": "Arrière gauche"
     },
     {
       "id": "rgb3",
-      "index": 4,
+      "index": "auto",
       "label": "Arrière droite"
     }
   ],
   "camera_thermique": {
     "id": "thermal",
-    "index": 5,
+    "index": "auto",
     "label": "Thermique (banquette arrière)",
     "active": true
+  },
+  "cameras": {
+    "_aide": "Positions réelles : lancer python lister_cameras.py (écrit config.local.json). index \"auto\" = prochaine caméra libre hors webcam du PC.",
+    "exclure": [
+      "integrated",
+      "intégrée",
+      "built-in",
+      "facetime",
+      "webcam",
+      "ir camera",
+      "windows hello",
+      "virtual",
+      "obs ",
+      "droidcam",
+      "camo"
+    ],
+    "thermique": [
+      "purethermal",
+      "lepton",
+      "thermal",
+      "flir",
+      "topdon",
+      "infiray",
+      "seek"
+    ]
   },
   "resolution": [
     1280,

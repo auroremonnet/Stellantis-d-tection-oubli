@@ -65,6 +65,29 @@
         <div class="ref-thumbs" id="ref-thumbs"></div>
       </div>
 
+      <div class="card collecte" id="collecte">
+        <div class="card-head"><h2>Collecte dataset</h2><span class="muted" id="col-etat">—</span></div>
+        <p class="muted small">Rafale d'images brutes sur les 4 caméras pour enrichir l'entraînement. Déplacer
+          l'objet ou la poupée entre deux prises ; les images identiques sont écartées.</p>
+        <div class="col-champs">
+          <label>Dans la scène
+            <input id="col-etiquette" list="col-suggestions" placeholder="ex. clés console centrale">
+            <datalist id="col-suggestions">
+              <option value="vide"><option value="clés"><option value="portefeuille"><option value="carte bancaire">
+              <option value="bébé siège auto"><option value="bébé sous couverture"><option value="téléphone">
+              <option value="sac"><option value="objets anodins (pièges)">
+            </datalist>
+          </label>
+          <label>Variante <select id="col-variante"></select></label>
+          <label>Prises <input id="col-prises" type="number" min="1" max="200" value="15"></label>
+          <label>Toutes les (s) <input id="col-intervalle" type="number" min="0.3" max="30" step="0.5" value="2"></label>
+        </div>
+        <div class="ref-actions">
+          <button class="btn btn-secondary" type="button" id="btn-col">Lancer la rafale</button>
+          <button class="btn btn-link" type="button" id="btn-col-stop" hidden>Arrêter</button>
+        </div>
+      </div>
+
       <div class="card surv" id="surv">
         <div class="card-head"><h2>Surveillance automatique</h2><span class="muted" id="surv-sous">désarmée</span></div>
         <ol class="surv-etapes" id="surv-etapes" aria-label="État de la surveillance">

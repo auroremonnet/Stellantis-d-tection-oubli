@@ -29,6 +29,60 @@ la voiture avec un poupon dans un siège auto est indispensable avant la v2. Cha
 sauvegarde désormais les images brutes dans `data/essais/brutes/` : les annoter dans Roboflow et
 les ajouter au projet.
 
+## v2 : peaufiner avec nos images de la voiture
+
+La v1 est faite d'images de bureaux et de tables : le modèle n'a jamais vu **notre** habitacle
+(angle plongeant, tissu des sièges, console, contre-jour). C'est l'écart principal à combler.
+
+### 1. Collecter (dashboard → carte « Collecte dataset »)
+
+Viser **~300 à 500 images gardées** sur une séance, réparties ainsi :
+
+| Scène | Pourquoi | Part |
+|---|---|---|
+| Poupon dans le siège auto, avec / sans couverture, tête tournée | `baby` est la classe la plus faible (309 images de banc) | ~30 % |
+| Clés, portefeuille, carte : console, banquette, sol, vide-poche, à moitié cachés | petits objets à plat, ce que YOLOE rate | ~35 % |
+| **Habitacle vide** + objets anodins (gourde, vêtement, câble, papiers) | négatifs : apprend que la boucle de ceinture n'est pas une clé | ~25 % |
+| Mêmes scènes de nuit / contre-jour | variantes du protocole d'essai | ~10 % |
+
+Conseils : déplacer l'objet entre chaque prise (rafale de 15, une prise toutes les 2 s) ;
+une rafale = une scène, avec une étiquette claire ; ne pas collecter avec une personne
+reconnaissable dans le champ (dépôt et Roboflow publics).
+
+### 2. Pré-annoter et importer
+
+```
+python outils/preparer_lot.py            # toutes les séances
+python outils/preparer_lot.py --session 20261107
+```
+
+Le modèle actuel propose des boîtes (seuils × 0,8 : mieux vaut une boîte à supprimer qu'une à
+dessiner). Roboflow → projet `care-oubli` → **Upload** → glisser le zip → *Save and continue*.
+Dans l'éditeur d'annotation : corriger, compléter, supprimer les fausses boîtes ; **laisser
+sans boîte** les images vides (ce sont des négatifs, il faut les garder).
+
+### 3. Découper train / valid / test SANS fuite
+
+Les 4 caméras filment la même scène au même instant : si une image va en train et sa voisine
+en test, le score de test est artificiellement bon. Règle : **une séance entière dans le même
+split**. Le plus simple : la séance du jour 1 en train/valid, une séance d'un autre jour (ou
+d'une autre voiture / lumière) entièrement en test. Dans Roboflow, choisir le split au moment
+de l'upload (*Add images to: Test*).
+
+### 4. Générer la v2, réentraîner, comparer
+
+Générer la version 2 avec les mêmes réglages que la v1 (fit within 1024, pas d'augmentation), puis :
+
+```
+python entrainement/entrainer.py --version 2 --imgsz 1280 --batch 8 --nom care-v2
+python outils/evaluer.py --donnees datasets/care-oubli-v2/data.yaml --moteurs yoloe custom hybride
+```
+
+`--imgsz 1280` (batch réduit pour tenir sur le GPU T4 de Colab) aide sur les clés et les cartes vues de loin par les caméras du plafonnier.
+Comparer v1 et v2 **sur le même test (images de la voiture)** : c'est ce chiffre qui va dans
+le livrable, pas le mAP sur les images de bureau. Si la v2 est meilleure : `detection.modele_custom`
+→ `modeles/care-v2.pt` dans `config.json`.
+
 ## Lancer l'entraînement
 
 ### Sur Google Colab (recommandé, GPU gratuit)

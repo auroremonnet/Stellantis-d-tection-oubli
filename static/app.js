@@ -29,6 +29,7 @@ function construireCameras(rgb) {
       <img id="img-${c.id}" alt="${esc(c.label)}">
       <span class="cam-label"><i class="dot" id="dot-${c.id}"></i>${esc(c.label)}</span>
       <span class="cam-off" id="off-${c.id}">Connexion…</span>
+      <span class="cam-warn" id="warn-${c.id}" hidden></span>
     </div>`).join("");
   for (const c of rgb) flux($(`#img-${c.id}`), c.id, (ok) => { $(`#off-${c.id}`).hidden = ok; });
   flux($("#img-thermal"), "thermal", (ok) => { $("#off-thermal").hidden = ok; });
@@ -53,9 +54,13 @@ async function rafraichirEtat() {
     afficherReference(e.reference, e.demo);
     for (const c of e.rgb) {
       const d = $(`#dot-${c.id}`);
-      if (d) d.className = "dot " + (c.ok ? "ok" : "ko");
+      if (d) d.className = "dot " + (c.ok ? (c.probleme ? "wait" : "ok") : "ko");
+      const tile = $(`#tile-${c.id}`);  // survol : quel périphérique filme cette position
+      if (tile) tile.title = [c.peripherique && `${c.peripherique} (index ${c.index})`, c.probleme].filter(Boolean).join(" — ");
       const off = $(`#off-${c.id}`);
       if (off && !c.ok) off.textContent = c.erreur ? `Hors ligne · ${c.erreur}` : "Hors ligne";
+      const av = $(`#warn-${c.id}`);
+      if (av) { av.hidden = !(c.ok && c.probleme); av.textContent = `⚠ ${c.probleme || ""}`; }
     }
     const th = e.thermique;
     if (!th) {
@@ -109,11 +114,41 @@ $("#btn-ref-del").onclick = async () => {
   REF_SIG = null; afficherReference(d, false);
 };
 
+// ---------------------------------------------------------------- collecte dataset
+let COL_TIMER = null;
+function afficherCollecte(c) {
+  const enCours = c.en_cours;
+  $("#btn-col").disabled = enCours;
+  $("#btn-col").textContent = enCours ? `Prise ${c.prise}/${c.prises}…` : "Lancer la rafale";
+  $("#btn-col-stop").hidden = !enCours;
+  const bilan = c.prises ? ` · dernière rafale : ${c.gardees} gardée${c.gardees > 1 ? "s" : ""}, ${c.doublons} doublon${c.doublons > 1 ? "s" : ""}` : "";
+  $("#col-etat").textContent = `${c.total_session} image${c.total_session > 1 ? "s" : ""} aujourd'hui${bilan}`;
+  if (c.erreur) alerte(c.erreur);
+  clearTimeout(COL_TIMER);
+  if (enCours) COL_TIMER = setTimeout(suivreCollecte, 700);
+}
+async function suivreCollecte() {
+  try { afficherCollecte(await (await fetch("/api/collecte")).json()); } catch { /* serveur arrêté */ }
+}
+$("#btn-col").onclick = async () => {
+  const corps = { etiquette: $("#col-etiquette").value, variante: $("#col-variante").value,
+    prises: +$("#col-prises").value, intervalle_s: +$("#col-intervalle").value };
+  try {
+    const r = await fetch("/api/collecte", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corps) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.erreur || "Erreur serveur");
+    afficherCollecte(d);
+  } catch (e) { alerte(e.message); }
+};
+$("#btn-col-stop").onclick = async () => afficherCollecte(await (await fetch("/api/collecte", { method: "DELETE" })).json());
+
 // ---------------------------------------------------------------- formulaire
 function construireFormulaire() {
   const sel = $("#f-scenario");
   sel.innerHTML = CONFIG.scenarios.map((s) => `<option value="${esc(s.code)}">${esc(s.code)} · ${esc(s.nom)}</option>`).join("");
   $("#f-variante").innerHTML = CONFIG.variantes.map((v) => `<option>${esc(v)}</option>`).join("");
+  $("#col-variante").innerHTML = $("#f-variante").innerHTML;
   const majVerite = () => {
     const s = CONFIG.scenarios.find((x) => x.code === sel.value);
     choisirVerite(s?.verite);
@@ -326,6 +361,7 @@ window.addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(ch
   construireCameras(e.rgb);
   $("#cams-sub").textContent = `${e.rgb.length} caméra${e.rgb.length > 1 ? "s" : ""} RGB · vue plongeante`;
   construireFormulaire();
+  suivreCollecte();
   await rafraichirEtat();
   setInterval(rafraichirEtat, 2000);
   await chargerEssais();

@@ -18,9 +18,11 @@ BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
 class Source:
     """Caméra RGB réelle, lue en continu dans un thread."""
 
-    def __init__(self, sid, index, label, resolution):
+    def __init__(self, sid, index, label, resolution, peripherique="", probleme=""):
+        # index : entier (caméra USB), URL (caméra IP) ou None (aucune caméra pour cette position)
         self.id, self.index, self.label = sid, index, label
         self.resolution = resolution
+        self.peripherique, self.probleme = peripherique, probleme
         self.frame = None
         self.stamp = 0.0
         self.ok = False
@@ -37,6 +39,8 @@ class Source:
         self._stop = True
 
     def _ouvrir(self):
+        if isinstance(self.index, str):  # caméra IP : FFmpeg choisit le format
+            return cv2.VideoCapture(self.index)
         cap = cv2.VideoCapture(self.index, BACKEND)
         # MJPG : indispensable pour faire passer plusieurs flux 720p sur un seul hub USB
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
@@ -50,9 +54,13 @@ class Source:
 
     def _boucle(self):
         while not self._stop:
+            if self.index is None:
+                self.ok, self.erreur = False, self.probleme or "aucune caméra affectée"
+                time.sleep(3)
+                continue
             cap = self._ouvrir()
             if not cap.isOpened():
-                self.ok, self.erreur = False, f"index {self.index} introuvable"
+                self.ok, self.erreur = False, f"{self.index} introuvable"
                 cap.release()
                 time.sleep(3)
                 continue
@@ -83,14 +91,15 @@ class Source:
 
     def etat(self):
         return {"id": self.id, "label": self.label, "index": self.index,
+                "peripherique": self.peripherique, "probleme": self.probleme,
                 "ok": self.ok and time.time() - self.stamp < 3, "erreur": self.erreur}
 
 
 class SourceThermique(Source):
     """Caméra thermique 80x60. Tente le flux brut 16 bits (radiométrique)."""
 
-    def __init__(self, sid, index, label, params):
-        super().__init__(sid, index, label, (160, 120))
+    def __init__(self, sid, index, label, params, peripherique="", probleme=""):
+        super().__init__(sid, index, label, (160, 120), peripherique, probleme)
         self.params = params
         self.mode = "?"
 
