@@ -44,7 +44,8 @@ async function rafraichirEtat() {
   try {
     const e = await (await fetch("/api/etat")).json();
     $("#badge-demo").hidden = !e.demo;
-    const moteur = { yoloe: "YOLOE (prompts)", coco: "COCO",
+    const moteur = { care: e.modele.custom ? "Localiser + nommer · YOLOE, modèle entraîné, MobileCLIP" : "Localiser + nommer · YOLOE, MobileCLIP",
+      yoloe: "YOLOE (prompts)", coco: "COCO",
       hybride: e.modele.custom ? "Hybride · YOLOE + modèle entraîné" : "YOLOE (modèle entraîné absent)" }[e.modele.moteur] || e.modele.moteur;
     pill($("#st-modele"), e.modele.pret ? (e.modele.avertissement ? "wait" : "ok") : e.modele.erreur ? "ko" : "wait",
       e.modele.pret ? moteur : e.modele.erreur ? "Modèle en erreur" : "Chargement du modèle…");
@@ -214,7 +215,7 @@ function afficherResultat(e) {
       <dt>Scénario</dt><dd>${esc(e.scenario)} · ${esc(e.variante)} · vérité <b>${LABEL_VERITE[e.verite]}</b></dd>
       <dt>RGB</dt><dd>${e.vivant_rgb ? `<span class="yes">vivant</span> (${esc(e.classes_vivant)})` : '<span class="no">rien de vivant</span>'}</dd>
       <dt>Thermique</dt><dd>${th == null ? '<span class="no">non utilisée</span>' : th ? `<span class="yes">chaud</span> · ${e.pixels_chauds} px${e.tmax ? " · " + e.tmax + " °C" : ""}` : `<span class="no">rien</span> · ${e.pixels_chauds} px`}</dd>
-      <dt>Objets</dt><dd>${esc(e.objets) || '<span class="no">aucun</span>'}</dd>
+      <dt>Objets</dt><dd>${esc(e.objets) || '<span class="no">aucun</span>'}${detailDetections(e.detections)}</dd>
       <dt>Référence</dt><dd>${e.reference_utilisee
         ? `${e.zones_nouvelles || 0} zone${e.zones_nouvelles > 1 ? "s" : ""} nouvelle${e.zones_nouvelles > 1 ? "s" : ""}${e.lumiere_changee ? ' · <span class="ref-warn">lumière changée, zones ignorées</span>' : ""}`
         : '<span class="no">non utilisée</span>'}</dd>
@@ -225,6 +226,15 @@ function afficherResultat(e) {
       <img src="/images/${e.id}_rgb.jpg" onerror="this.remove()" alt="RGB annoté">
       ${th == null ? "" : `<img src="/images/${e.id}_th.jpg" onerror="this.remove()" alt="Thermique">`}
     </div>`;
+}
+
+// Détail par caméra de ce qui a été retenu : libellé, confiance du classifieur, caméra.
+function detailDetections(dets) {
+  const valeurs = (dets || []).filter((d) => d.categorie !== "vivant");
+  if (!valeurs.length) return "";
+  return `<ul class="dets">${valeurs.map((d) => `<li><b>${esc(d.libelle)}</b>
+    ${d.confiance == null ? "" : `<span class="conf">${Math.round(100 * d.confiance)} %</span>`}
+    <span class="cam">${esc(d.camera)}</span></li>`).join("")}</ul>`;
 }
 
 const tag = (r) => (r ? `<span class="tag ${r}">${r}</span>` : '<span class="tag na">—</span>');

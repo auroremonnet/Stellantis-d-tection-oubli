@@ -1,7 +1,12 @@
 """Compare les moteurs de détection sur le même jeu de test annoté (export YOLO).
 
     python outils/evaluer.py --donnees datasets/care-oubli-v1/data.yaml
-    python outils/evaluer.py --donnees ... --moteurs yoloe custom hybride --split test
+    python outils/evaluer.py --donnees ... --moteurs care hybride yoloe custom --split test
+    python outils/evaluer.py --donnees datasets/leftincar/data.yaml --classes leftincar
+
+Jeu public LeftInCAR (Université du Minho, CC BY 4.0, doi:10.17632/dd4hw3r6dh.1) : 971 images
+d'objets oubliés en voiture, 10 classes. Un test indépendant de nos propres photos — voir
+docs/detection.md pour l'installer.
 
 Pour chaque moteur : précision / rappel / F1 par classe (IoU >= 0,5), taux d'alerte
 correcte par image (l'image contenait-elle un objet évalué, et l'a-t-on signalé ?) et
@@ -9,7 +14,8 @@ latence par image. Écrit un rapport Markdown + JSON dans rapports/ — directem
 réutilisable dans le livrable (tableau « YOLOE vs modèle entraîné vs hybride »).
 
 Moteurs :
-    coco, yoloe, hybride   le Detecteur du banc, configuré par config.json
+    care                   localiser puis nommer (moteur par défaut du banc)
+    coco, yoloe, hybride   les moteurs d'avant, configurés par config.json
     custom                 le modèle entraîné seul (detection.modele_custom)
 """
 from __future__ import annotations
@@ -30,6 +36,12 @@ from care.detecteur import LIBELLES, Detecteur  # noqa: E402
 from care.metriques_detection import Evaluation, canonique  # noqa: E402
 
 CLASSES_CARE = ("bébé", "clés", "portefeuille", "carte bancaire")
+CLASSES_LEFTINCAR = ("téléphone", "ordinateur", "carte bancaire", "valise", "portefeuille", "sac à dos",
+                     "clés", "lunettes", "sac à main")          # « vêtement » : objet anodin, non évalué
+# Noms de classes d'autres jeux de données → libellé du banc
+AUTRES_NOMS = {"phone": "téléphone", "mobile phone": "téléphone", "notebook": "ordinateur", "key": "clés",
+               "purse": "sac à main", "eyeglasses": "lunettes", "sunglasses": "lunettes", "clothes": "vêtement",
+               "clothing": "vêtement", "cloth": "vêtement"}
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -73,7 +85,8 @@ def verites(lbl: Path, noms: dict, w: int, h: int):
             c, cx, cy, bw, bh = int(v[0]), *map(float, v[1:5])
             nom = noms.get(c, str(c))
             boite = [(cx - bw / 2) * w, (cy - bh / 2) * h, (cx + bw / 2) * w, (cy + bh / 2) * h]
-            out.append((canonique(LIBELLES.get(nom, nom)), boite))
+            nom = str(nom).strip().lower()
+            out.append((canonique(LIBELLES.get(nom, AUTRES_NOMS.get(nom, nom))), boite))
     return out
 
 
@@ -160,9 +173,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--donnees", type=Path, required=True, help="data.yaml de l'export YOLO")
     ap.add_argument("--split", default="test")
-    ap.add_argument("--moteurs", nargs="+", default=["yoloe", "custom", "hybride"],
-                    choices=["coco", "yoloe", "custom", "hybride"])
-    ap.add_argument("--classes", nargs="+", default=list(CLASSES_CARE), help="libellés français évalués")
+    ap.add_argument("--moteurs", nargs="+", default=["care", "hybride", "yoloe", "custom"],
+                    choices=["care", "coco", "yoloe", "custom", "hybride"])
+    ap.add_argument("--classes", nargs="+", default=list(CLASSES_CARE),
+                    help="libellés français évalués, ou « leftincar » pour les classes de ce jeu")
     ap.add_argument("--config", type=Path, default=RACINE / "config.json")
     ap.add_argument("--seuil-iou", type=float, default=0.5)
     ap.add_argument("--max-images", type=int, default=None)
@@ -173,6 +187,8 @@ def main(argv=None) -> int:
     jeu = list(lire_jeu(a.donnees.resolve(), a.split))[: a.max_images]
     if not jeu:
         sys.exit("Aucune image trouvée.")
+    if a.classes == ["leftincar"]:
+        a.classes = list(CLASSES_LEFTINCAR)
     classes = tuple(canonique(c) for c in a.classes)
     print(f"{len(jeu)} images · classes évaluées : {', '.join(classes)}")
 

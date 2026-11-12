@@ -16,50 +16,36 @@
     1280,
     720
   ],
-  "images_par_essai": 10,
+  "images_par_essai": 3,
   "repetitions_cible": 10,
   "ratio_presence": 0.5,
   "detection": {
-    "moteur": "hybride",
+    "_aide": "moteur « care » : YOLOE et le modèle entraîné localisent, MobileCLIP nomme (care/detection). Moteurs d'avant, pour comparaison : hybride, yoloe, coco. Ajouter un objet : detection.catalogue (voir care/detection/catalogue.py).",
+    "moteur": "care",
     "modele": "yoloe-11s-seg.pt",
+    "modele_custom": "modeles/care-v1.pt",
     "imgsz": 640,
     "confiance_vivant": 0.4,
-    "confiance_objet": 0.25,
-    "prompts_vivant": [
-      "person",
-      "child",
-      "baby",
-      "cat",
-      "dog"
-    ],
-    "prompts_valeur": [
-      "cell phone",
-      "car key",
-      "keys",
-      "wallet",
-      "credit card",
-      "handbag",
-      "backpack",
-      "bag",
-      "laptop",
-      "tablet",
-      "glasses",
-      "watch",
-      "headphones"
-    ],
-    "zoom_zones": true,
-    "alerte_zone_inconnue": true,
-    "modele_custom": "modeles/care-v1.pt",
     "confiance_custom": 0.35,
+    "regles": {
+      "seuil_objet": 0.6,
+      "seuil_accord": 0.3
+    },
+    "alerte_zone_inconnue": true,
     "hauteur_min_adulte": 0.35,
-    "imgsz_presence": 480
+    "imgsz_presence": 480,
+    "historique": {
+      "_aide": "réglages des moteurs hybride / yoloe / coco uniquement",
+      "confiance_objet": 0.25,
+      "zoom_zones": true
+    }
   },
   "reference": {
-    "iou_fixe": 0.5,
-    "seuil_changement": 35,
-    "aire_min": 1500,
-    "part_max_image": 0.6,
-    "zones_max": 6
+    "_aide": "comparaison à l'habitacle vide (care/detection/changement.py)",
+    "part_deja_la": 0.15,
+    "seuil_luminance": 24,
+    "seuil_couleur": 13,
+    "zones_max": 8
   },
   "thermique": {
     "seuil_celsius": 30.0,

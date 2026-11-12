@@ -116,45 +116,62 @@ détecté à bord annule toute notification (l'opérateur est là). Pas de notif
 `--demo` (sauf `"en_demo": true`). Le réglage `ratio_confirmation` de l'ancienne version des
 alertes n'est plus utilisé : c'est `ratio_presence` (détection sur l'essai) qui joue ce rôle.
 
-## Reconnaître les objets de valeur (téléphone, clés, portefeuille, carte, sac…)
+## Reconnaître les objets de valeur (téléphone, clés, portefeuille, carte, lunettes, sac…)
 
-Le détecteur est **YOLOE**, un modèle à vocabulaire ouvert : on lui donne une liste de mots
-(`detection.prompts_valeur` dans `config.json`) et il les cherche, sans entraînement. YOLO
-classique (80 classes COCO) ne connaît ni les clés, ni les portefeuilles, ni les cartes.
+Le moteur par défaut (`"moteur": "care"`) travaille en trois temps :
 
-Mais dans un habitacle, un détecteur seul se trompe : la boucle de ceinture ressemble à un
-téléphone, la console à un sac. D'où la **référence « habitacle vide »** :
+1. **Localiser.** YOLOE (détecteur à vocabulaire ouvert) et notre modèle entraîné proposent des
+   boîtes. Vus d'en haut dans l'habitacle, ils *trouvent* 93 % des objets, mais se trompent de
+   *nom* trois fois sur quatre (téléphone posé de dos → « portefeuille », boucle de ceinture →
+   « clés »). On garde donc leurs boîtes, et leur nom seulement comme indice.
+2. **Nommer.** Chaque boîte est recadrée et classée par MobileCLIP parmi le catalogue
+   (`care/detection/catalogue.py`) **et le décor** (siège, boucle, câble, console…) : le
+   classifieur peut répondre « rien d'intéressant ».
+3. **Trancher.** Un objet est retenu si le classifieur est sûr de lui (≥ 60 %), ou si deux
+   modèles indépendants sont d'accord (classifieur ≥ 30 % + même nom proposé par un détecteur).
+   Un être vivant n'est jamais annoncé par le classifieur seul.
 
-1. Habitacle vide, portes fermées → bouton **Capturer la référence** dans le dashboard.
-2. À chaque essai, les détections déjà présentes au même endroit sur la référence sont
-   ignorées (affichées en gris sur l'image annotée).
-3. Tout ce qui a changé par rapport à la référence est une **zone nouvelle** (orange) :
-   elle est zoomée et re-soumise au détecteur. Si rien n'est reconnu, l'essai remonte quand
-   même « objet non identifié » → décision ALERTE. Un objet oublié n'a pas besoin d'être nommé
-   pour être signalé.
+Mesuré sur les 32 images des essais du 06/11 dans la voiture (56 objets annotés à la main,
+9 images d'habitacle vide), sans référence :
 
-À refaire si la caméra bouge ou si la lumière change beaucoup (le résultat indique alors
-« lumière changée, zones ignorées »). Pour revenir à YOLO classique et comparer :
-`"moteur": "coco"` et `"modele": "yolov8m.pt"` dans `detection`.
+| Moteur | Objets trouvés | Rappel | Précision | Fausses alertes (habitacle vide) |
+|---|---|---|---|---|
+| **care** (localiser + nommer) | 49 / 56 | **88 %** | **94 %** | 0 / 9 |
+| hybride (avant) | 15 / 56 | 27 % | 44 % | 1 / 9 |
+| yoloe seul | 3 / 56 | 5 % | 21 % | 0 / 9 |
+| coco (YOLOv8) | 5 / 56 | 9 % | 56 % | 0 / 9 |
 
-Détails, pistes testées et jeux de données : [`docs/recherche-detection-objets.md`](docs/recherche-detection-objets.md).
-
-### Moteur hybride : YOLOE + notre modèle entraîné
-
-YOLOE rate encore les petits objets posés à plat (clés dans la console, téléphone sur la
-banquette). Le moteur par défaut est donc `"hybride"` : YOLOE **et** un YOLO26 entraîné sur nos
-classes (`baby`, `keys`, `wallet`, `card`) tournent sur chaque image ; les doublons entre les
-deux sont fusionnés, le modèle entraîné étant prioritaire sur ses propres classes.
-
-Tant que `modeles/care-v1.pt` n'existe pas, le banc tourne en YOLOE seul (pastille orange dans le
-dashboard). Pour le produire : [`entrainement/README.md`](entrainement/README.md) (Colab, ~30 min).
-Pour mesurer l'apport réel sur un jeu de test annoté :
+Pour refaire la mesure après un réglage ou un nouvel entraînement, sans retourner dans la voiture :
 
 ```
-python outils/evaluer.py --donnees datasets/care-oubli-v1/data.yaml --moteurs yoloe custom hybride
+python outils/rejouer.py --moteurs care hybride --annoter rapports/rejeu
 ```
 
-→ tableau précision / rappel par classe et par moteur dans `rapports/`, prêt pour le livrable.
+### La référence « habitacle vide »
+
+1. Habitacle vide, portes fermées → bouton **Capturer la référence** (fait automatiquement à
+   l'armement de la surveillance).
+2. À chaque essai, seul **ce qui a changé** depuis la référence est examiné : une boucle de
+   ceinture ou l'équipement de la console, déjà là, ne peuvent plus déclencher d'alerte — et
+   l'essai est plus rapide.
+3. Une zone qui a changé sans être reconnue remonte « objet non identifié » (orange), sauf si
+   le classifieur y voit du décor (câble déplacé, ombre).
+
+La comparaison résiste à l'auto-exposition de la caméra et à un léger déplacement. Si toute
+l'image a changé (caméra bougée, nuit tombée), le résultat indique « lumière changée » : la
+référence est à refaire.
+
+### Régler et étendre
+
+- Ajouter un objet : `detection.catalogue` dans `config.json`, sans toucher au code, par ex.
+  `{"parapluie": {"mots": ["umbrella"], "descriptions": ["an umbrella"]}}`.
+- Seuils : `detection.regles` (`seuil_objet`, `seuil_accord`, `candidats_max`…).
+- Comparer avec les moteurs d'avant : `"moteur": "hybride"`, `"yoloe"` ou `"coco"`.
+- Entraîner le modèle : [`entrainement/README.md`](entrainement/README.md). Évaluer sur un jeu
+  annoté : `python outils/evaluer.py --donnees <data.yaml>`.
+
+Architecture, mesures et limites : [`docs/detection.md`](docs/detection.md). Historique des
+pistes testées : [`docs/recherche-detection-objets.md`](docs/recherche-detection-objets.md).
 
 ## Calibrer la thermique
 
@@ -191,20 +208,30 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 
 ```
 app.py               serveur Flask + API
-config.json          caméras, détection (moteur, prompts, seuils), référence, scénarios, variantes
+config.json          caméras, détection (moteur, règles, catalogue), référence, scénarios, variantes
 config_5cameras.json copie de référence de la configuration 4 RGB + thermique
 lister_cameras.py    assistant : quelle caméra filme quelle position → config.local.json
 care/cameras.py      acquisition (1 thread par caméra) + sources démo
 care/peripheriques.py caméra physique ↔ position (par nom, webcam du PC écartée)
 care/collecte.py     rafales d'images brutes pour le dataset (doublons écartés)
-care/detecteur.py    YOLOE / COCO / hybride, zoom sur zones nouvelles, seuil thermique, fusion
-care/reference.py    référence habitacle vide : détections fixes à ignorer, zones nouvelles
+care/detecteur.py    façade : chargement des modèles, essai complet, présence du conducteur
+care/detection/      détection RGB : localiser → nommer → trancher
+    catalogue.py       classes, mots du détecteur, descriptions du classifieur
+    moteurs.py         moteur « care » + moteurs d'avant (hybride, yoloe, coco)
+    classifieur.py     recadrage → probabilité par classe (MobileCLIP)
+    clip_image.py      encodeur d'images MobileCLIP, reconstruit depuis mobileclip_blt.ts
+    identification.py  règles pures : propositions + classifieur → détections
+    changement.py      comparaison à la référence (éclairage, recalage, zones nouvelles)
+    essai.py           analyse d'un essai multi-caméras
+    rendu.py           images annotées, mosaïque
+care/reference.py    référence habitacle vide : capture, persistance, « déjà là »
 care/surveillance.py machine à états de la surveillance automatique + boucle de fond
 care/decision.py     règle d'alerte unique (critique / objet / rien)
 care/alertes.py      notifications ntfy (cooldown, rappels, levée d'alerte)
 care/metriques_detection.py  précision / rappel boîte par boîte, tous moteurs
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
 entrainement/        entraînement du modèle (script + notebook Colab)
+outils/rejouer.py    rejoue les images des essais et note la détection (avant / après)
 outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté
 outils/preparer_lot.py lot Roboflow pré-annoté à partir des images collectées
 tests/               tests automatiques (pytest)
