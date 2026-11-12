@@ -17,6 +17,11 @@ CLASSES_AUDIO = {
     "aboiement": ("Bark",),
     "miaulement": ("Meow",),
 }
+PAROLE_AUDIOSET = {
+    "Speech", "Male speech, man speaking", "Female speech, woman speaking",
+    "Child speech, kid speaking", "Conversation", "Speech synthesizer",
+    "Hubbub, speech noise, speech babble", "Narration, monologue",
+}
 
 
 def sons_retenus(scores, seuil):
@@ -25,26 +30,47 @@ def sons_retenus(scores, seuil):
 
 
 def extraire_sons(scores, label2id, id2label, top_k=3):
-    """Scores CARE et meilleures classes AudioSet d'une même analyse."""
+    """Scores CARE, classement global et classement indépendant de la parole."""
     scores = np.asarray(scores)
     cibles = {nom: round(max(float(scores[label2id[classe]]) for classe in classes), 3)
               for nom, classes in CLASSES_AUDIO.items()}
     indices = np.argsort(scores)[::-1][:top_k]
     generaux = [{"label": str(id2label[int(i)]), "score": round(float(scores[i]), 3)}
                 for i in indices]
-    return cibles, generaux
+    hors_parole = [{"label": str(id2label[int(i)]), "score": round(float(scores[i]), 3)}
+                   for i in np.argsort(scores)[::-1]
+                   if str(id2label[int(i)]) not in PAROLE_AUDIOSET][:top_k]
+    return cibles, generaux, hors_parole
 
 
-def _resultat(statut, scores=None, sons=None, generaux=None, seuil_general=0.3, erreur=""):
+def _resultat(statut, scores=None, sons=None, generaux=None, hors_parole=None,
+              seuil_general=0.3, erreur=""):
     scores = scores or {}
     generaux = generaux or []
+    hors_parole = hors_parole or []
     premier = generaux[0] if generaux and generaux[0]["score"] >= seuil_general else None
+    premier_hors_parole = (hors_parole[0] if hors_parole and
+                           hors_parole[0]["score"] >= seuil_general else None)
     return {"audio_statut": statut, "sons_audio": sons or [],
             **{f"{nom}_score": scores.get(nom) for nom in CLASSES_AUDIO},
             "top_sons": generaux,
             "son_general": premier["label"] if premier else "",
             "score_general": premier["score"] if premier else None,
+            "top_sons_hors_parole": hors_parole,
+            "son_hors_parole": premier_hors_parole["label"] if premier_hors_parole else "",
+            "score_hors_parole": premier_hors_parole["score"] if premier_hors_parole else None,
             "erreur_audio": erreur}
+
+
+def _fusionner_candidats(mesures, index, top_k):
+    candidats = {}
+    for mesure in mesures:
+        for candidat in mesure[index]:
+            label = candidat["label"]
+            candidats[label] = max(candidats.get(label, 0), candidat["score"])
+    return [{"label": label, "score": score}
+            for label, score in sorted(candidats.items(),
+                                       key=lambda item: item[1], reverse=True)[:top_k]]
 
 
 class DetecteurAudio:
@@ -54,7 +80,7 @@ class DetecteurAudio:
         self.extracteur = None
         self.erreur = ""
         self._lock = threading.Lock()
-        self._mesures = deque(maxlen=120)  # capture, calcul, scores CARE, top AudioSet
+        self._mesures = deque(maxlen=120)  # début, fin, calcul, CARE, top global, top hors parole
         self._derniers_sons = {}
         self._flux_ok = False
         self._micro_nom = ""
@@ -97,10 +123,12 @@ class DetecteurAudio:
         info_micro = sd.query_devices(appareil, "input")
         frequence = int(info_micro["default_samplerate"])
         duree = float(self.cfg.get("duree_s", 3))
+        duree_courte = float(self.cfg.get("duree_courte_s", duree))
         intervalle = float(self.cfg.get("intervalle_s", 1))
-        if duree <= 0 or intervalle <= 0:
-            raise ValueError("duree_s et intervalle_s doivent être positifs")
+        if duree <= 0 or duree_courte <= 0 or duree_courte > duree or intervalle <= 0:
+            raise ValueError("Durées audio invalides : 0 < duree_courte_s <= duree_s et intervalle_s > 0")
         fenetre = int(frequence * duree)
+        fenetre_courte = int(frequence * duree_courte)
         limite = fenetre + int(frequence * 0.5)
         morceaux = deque()
         verrou = threading.Lock()
@@ -126,23 +154,27 @@ class DetecteurAudio:
                 self.erreur = ""
                 self._micro_nom = info_micro["name"]
             dernier_calcul = 0.0
+            court = duree_courte < duree
             while True:
                 time.sleep(0.1)
                 if time.monotonic() - dernier_calcul < intervalle:
                     continue
+                taille = fenetre_courte if court else fenetre
                 with verrou:
-                    if total < fenetre:
+                    if total < taille:
                         continue
-                    signal = np.concatenate(list(morceaux))[-fenetre:]
+                    signal = np.concatenate(list(morceaux))[-taille:]
                 fin_fenetre = time.monotonic()
-                scores, generaux = self._classer(signal, frequence)
+                scores, generaux, hors_parole = self._classer(signal, frequence)
                 instant = time.monotonic()
                 seuil = float(self.cfg.get("seuil", 0.5))
                 with self._lock:
-                    self._mesures.append((fin_fenetre, instant, scores, generaux))
+                    self._mesures.append((fin_fenetre - taille / frequence,
+                                          fin_fenetre, instant, scores, generaux, hors_parole))
                     for nom in sons_retenus(scores, seuil):
                         self._derniers_sons[nom] = instant
                 dernier_calcul = instant
+                court = not court if duree_courte < duree else False
 
     def _boucle(self):
         try:
@@ -178,31 +210,25 @@ class DetecteurAudio:
         maintenant = time.monotonic()
         fraicheur = max(5.0, 2 * float(self.cfg.get("intervalle_s", 1)))
         if depuis is None:
-            if not mesures or maintenant - mesures[-1][1] > fraicheur:
+            if not mesures or maintenant - mesures[-1][2] > fraicheur:
                 return _resultat("attente")
-            scores = mesures[-1][2]
-            generaux = mesures[-1][3]
             maintien = float(self.cfg.get("maintien_s", 4))
+            recentes = [m for m in mesures if maintenant - m[2] <= maintien] or mesures[-1:]
+            scores = {nom: max(m[3][nom] for m in recentes) for nom in CLASSES_AUDIO}
+            generaux = mesures[-1][4]
+            hors_parole = _fusionner_candidats(recentes, 5, int(self.cfg.get("top_k", 3)))
             sons = [nom for nom, stamp in derniers_sons.items()
                     if maintenant - stamp <= maintien]
         else:
-            premiere_fenetre = depuis + float(self.cfg.get("duree_s", 3))
-            selection = [(scores, generaux) for capture, _, scores, generaux in mesures
-                         if capture >= premiere_fenetre]
+            selection = [m for m in mesures if m[0] >= depuis]
             if not selection:
                 return _resultat("attente")
-            scores = {nom: max(m[nom] for m, _ in selection) for nom in CLASSES_AUDIO}
-            tous_generaux = {}
-            for _, candidats in selection:
-                for candidat in candidats:
-                    label = candidat["label"]
-                    tous_generaux[label] = max(tous_generaux.get(label, 0), candidat["score"])
-            generaux = [{"label": label, "score": score}
-                        for label, score in sorted(tous_generaux.items(),
-                                                   key=lambda item: item[1], reverse=True)
-                        [:int(self.cfg.get("top_k", 3))]]
+            scores = {nom: max(m[3][nom] for m in selection) for nom in CLASSES_AUDIO}
+            top_k = int(self.cfg.get("top_k", 3))
+            generaux = _fusionner_candidats(selection, 4, top_k)
+            hors_parole = _fusionner_candidats(selection, 5, top_k)
             sons = sons_retenus(scores, float(self.cfg.get("seuil", 0.5)))
-        return _resultat("ok", scores, sons, generaux,
+        return _resultat("ok", scores, sons, generaux, hors_parole,
                          seuil_general=float(self.cfg.get("seuil_general", 0.3)))
 
     def etat(self):

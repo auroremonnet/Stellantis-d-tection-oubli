@@ -62,6 +62,16 @@ function afficherAudio(au) {
     ligne.textContent = `${son.label} · score ${Math.round(son.score * 100)} %`;
     return ligne;
   }));
+  $("#audio-hors-parole").textContent = mesure.audio_statut === "ok"
+    ? mesure.son_hors_parole
+      ? `Autre son possible : ${mesure.son_hors_parole} · score ${Math.round(mesure.score_hors_parole * 100)} %`
+      : "Aucun autre son identifié avec assez de certitude"
+    : "Autres sons : en attente d'une analyse audio";
+  $("#audio-top-hors-parole").replaceChildren(...(mesure.top_sons_hors_parole || []).map((son) => {
+    const ligne = document.createElement("li");
+    ligne.textContent = `${son.label} · score ${Math.round(son.score * 100)} %`;
+    return ligne;
+  }));
   for (const nom of ["pleurs", "aboiement", "miaulement"]) {
     const score = mesure[`${nom}_score`];
     $(`#audio-${nom}`).value = score ?? 0;
