@@ -130,3 +130,33 @@ class Evaluation:
             "latence_moyenne_s": round(sum(lat) / len(lat), 3) if lat else None,
             "latence_p95_s": round(lat[int(0.95 * (len(lat) - 1))], 3) if lat else None,
         }
+
+
+def apparier_points(verites: list, predictions: list, largeur: int, hauteur: int,
+                    tolerance: float = 14 / 640, aire_max: float = 0.3) -> dict[str, Compteur]:
+    """Appariement quand la vérité terrain est un POINT par objet (annotation rapide).
+
+    verites : [(libellé, x, y)] — le libellé « ? » marque une zone ambiguë, où une détection
+    n'est comptée ni juste ni fausse ; predictions : [(libellé, conf, boîte)] pour UNE image.
+    Une prédiction est juste si le point d'un objet de même libellé tombe dans sa boîte
+    (à `tolerance` × largeur près) et que la boîte n'est pas démesurée.
+    """
+    res: dict[str, Compteur] = defaultdict(Compteur)
+    marge = tolerance * largeur
+    dedans = lambda b, x, y, m: b[0] - m <= x <= b[2] + m and b[1] - m <= y <= b[3] + m  # noqa: E731
+    pris: set[int] = set()
+    for lib, conf, b in sorted(predictions, key=lambda p: -p[1]):
+        lib = canonique(lib)
+        petit = (b[2] - b[0]) * (b[3] - b[1]) < aire_max * largeur * hauteur
+        k = next((i for i, (g, x, y) in enumerate(verites)
+                  if i not in pris and canonique(g) == lib and petit and dedans(b, x, y, marge)), None)
+        if k is not None:
+            pris.add(k)
+            res[lib].vp += 1
+            res[lib].confiances_vp.append(conf)
+        elif not any(g == "?" and dedans(b, x, y, marge) for g, x, y in verites):
+            res[lib].fp += 1
+    for i, (g, _x, _y) in enumerate(verites):
+        if g != "?" and i not in pris:
+            res[canonique(g)].fn += 1
+    return res

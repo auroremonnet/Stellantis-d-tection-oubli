@@ -50,3 +50,18 @@ def test_chemin_label_convention_yolo():
     assert chemin_label(PurePosixPath("/d/test/images/a.jpg")) == PurePosixPath("/d/test/labels/a.txt")
     win = PureWindowsPath(r"C:\d\images\test\images\b.png")
     assert chemin_label(win) == PureWindowsPath(r"C:\d\images\test\labels\b.txt")
+
+
+def test_appariement_par_points():
+    from care.metriques_detection import apparier_points
+    verites = [("téléphone", 100, 100), ("clés", 300, 300), ("?", 500, 400)]
+    preds = [("téléphone", 0.9, [60, 80, 140, 120]),          # juste
+             ("clés de voiture", 0.8, [310, 305, 350, 340]),  # juste : synonyme, point à 10 px du bord
+             ("portefeuille", 0.7, [480, 380, 520, 420]),     # zone ambiguë : ni juste ni faux
+             ("téléphone", 0.6, [0, 0, 30, 30]),              # faux
+             ("clés", 0.5, [0, 0, 400, 400])]                 # boîte démesurée : faux
+    r = apparier_points(verites, preds, 640, 480)
+    assert (r["téléphone"].vp, r["téléphone"].fp, r["téléphone"].fn) == (1, 1, 0)
+    assert (r["clés"].vp, r["clés"].fp, r["clés"].fn) == (1, 1, 0)
+    assert "portefeuille" not in r
+    assert apparier_points([("lunettes", 10, 10)], [], 640, 480)["lunettes"].fn == 1

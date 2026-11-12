@@ -70,9 +70,7 @@ else:
                              _th["peripherique"], _th["probleme"]).demarrer() if _th else None)
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
-REF_PARAMS = {"iou_fixe": 0.5, "seuil_changement": 35, "aire_min": 1500, "part_max_image": 0.6, "zones_max": 6}
-REF_PARAMS.update(CFG.get("reference", {}))
-REFERENCE = Reference(os.path.join(DATA, "reference"), REF_PARAMS)
+REFERENCE = Reference(os.path.join(DATA, "reference"), CFG.get("reference"))
 COLLECTEUR = Collecteur(os.path.join(DATA, "collecte"), RGB)   # images pour le dataset v2
 
 CFG_ALERTES = dict(CFG.get("alertes", {}))
@@ -250,8 +248,7 @@ def etat():
 @app.route("/api/config")
 def config():
     out = {k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")}
-    out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele,
-                        "prompts_vivant": DETECTEUR.prompts_vivant, "prompts_valeur": DETECTEUR.prompts_valeur}
+    out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele, **DETECTEUR.vocabulaire}
     return jsonify(out)
 
 
@@ -333,7 +330,7 @@ def nouvel_essai():
     if alerte is not None:
         ALERTEUR.notifier(alerte, mosaique(r["images_rgb"]))
     _eid, ligne = _enregistrer(r, d, "manuel", brutes, alerte and alerte.niveau)
-    return jsonify(ligne)
+    return jsonify({**ligne, "detections": r.get("detections", [])})   # détail par caméra, non journalisé
 
 
 @app.route("/api/evenements")

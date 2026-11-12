@@ -11,8 +11,8 @@ proposées par le modèle apparaissent, il ne reste qu'à les CORRIGER (bien plu
 de tout dessiner). Une image sans boîte est un exemple négatif : la garder, c'est ce qui
 apprend au modèle que la boucle de ceinture n'est pas une clé.
 
-Les noms de classe sont ceux de la v1 (baby, card, keys, wallet) : Roboflow les fusionne
-avec les classes existantes du projet.
+Les noms de classe sont ceux de la v1 (baby, card, keys, wallet), plus phone et glasses
+pour la v2 : Roboflow les fusionne avec les classes existantes du projet.
 """
 from __future__ import annotations
 
@@ -29,10 +29,14 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RACINE))
 
-CLASSES = ["baby", "card", "keys", "wallet"]
-# nom vu par le détecteur (YOLOE à prompts ou modèle entraîné) → classe du dataset
-CORRESPONDANCE = {"baby": "baby", "child": "baby", "keys": "keys", "car key": "keys",
-                  "wallet": "wallet", "credit card": "card", "card": "card"}
+CLASSES = ["baby", "card", "keys", "wallet", "phone", "glasses"]   # v1 + téléphone et lunettes (v2)
+# nom vu par le détecteur → classe du dataset. Libellés français : moteur « care » ;
+# noms anglais : moteurs historiques (YOLOE à prompts, modèle entraîné).
+CORRESPONDANCE = {"bébé": "baby", "enfant": "baby", "clés": "keys", "portefeuille": "wallet",
+                  "carte bancaire": "card", "téléphone": "phone", "lunettes": "glasses",
+                  "baby": "baby", "child": "baby", "keys": "keys", "car key": "keys",
+                  "wallet": "wallet", "credit card": "card", "card": "card", "cell phone": "phone",
+                  "glasses": "glasses"}
 EXT = (".jpg", ".jpeg", ".png")
 
 
