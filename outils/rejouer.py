@@ -125,7 +125,7 @@ def main(argv=None) -> int:
     reference = None
     if a.reference:
         from care.reference import Reference
-        reference = Reference(str(a.reference), cfg.get("reference"))
+        reference = Reference(str(a.reference), cfg.get("reference"), cfg.get("lumiere"))
     for moteur in a.moteurs:
         d = charger_detecteur(cfg, moteur)
         sortie = a.annoter / d.moteur if a.annoter else None

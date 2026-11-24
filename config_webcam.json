@@ -47,6 +47,13 @@
     "seuil_couleur": 13,
     "zones_max": 8
   },
+  "lumiere": {
+    "_aide": "Faible lumière (care/detection/lumiere.py). Caméra bruitée (bruit > seuil_bruit, mesuré entre deux images) : on moyenne des rafales. Caméra sombre (luminosité médiane < seuil_sombre) : on éclaircit. Sous seuil_noir : caméra déclarée aveugle.",
+    "seuil_bruit": 5.0,
+    "seuil_sombre": 55,
+    "seuil_noir": 20,
+    "rafale": 4
+  },
   "thermique": {
     "_aide": "Caméra du banc (UVC Camera, 256x392) : backend msmf + resolution [256, 392], comptes bruts → delta_comptes. Vraie TC001 : resolution [256, 384], températures → delta_c. methode : reference (compare à l'habitacle vide capturé à l'armement ; sans référence, repasse au contraste), contraste, seuil_fixe. zones_ignorees : [[x1, y1, x2, y2]] en part de l'image. Mise en route et réglage : python outils/diagnostic_thermique.py (voir docs/protocole-thermique-voiture.md).",
     "methode": "reference",

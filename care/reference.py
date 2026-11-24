@@ -19,14 +19,18 @@ import cv2
 import numpy as np
 
 from .detection.changement import Comparaison, Reglages
+from .detection.essai import rafale
 from .detection.geometrie import iou, recouvrement  # noqa: F401 — réexportés (anciens imports)
+from .detection.lumiere import Moyenne, bruit, eclaircir
+from .detection.lumiere import Reglages as Lumiere
 
 
 class Reference:
-    def __init__(self, dossier, params=None):
+    def __init__(self, dossier, params=None, lumiere=None):
         self.dossier = dossier
         self.p = {"iou_fixe": 0.5, "part_deja_la": 0.15, **(params or {})}
         self.reglages = Reglages.depuis_config(self.p)
+        self.lumiere = Lumiere.depuis_config(lumiere)   # même traitement de faible lumière que les essais
         self._lock = threading.Lock()
         self.images = {}      # sid -> image BGR
         self.detections = {}  # sid -> [(libellé, confiance, [x1, y1, x2, y2])]
@@ -128,10 +132,16 @@ class Reference:
                 f = s.derniere()
                 if f is None:
                     continue
+                images = rafale(s, 2)
+                if len(images) >= 2 and bruit(images[0], images[1]) > self.lumiere.seuil_bruit:
+                    moyenne = Moyenne()                            # caméra bruitée : moyenne d'une rafale
+                    moyenne.ajouter(rafale(s, 3 * self.lumiere.rafale, attente_s=0.6))
+                    f = moyenne.image()
                 self.images[s.id] = f
                 self.detections[s.id] = [
                     (detecteur.libelle(d["nom"]), round(d["conf"], 2), [int(v) for v in d["boite"]])
-                    for d in (detecteur.detecter([f], facteur_conf=0.6)[0] if detecteur.pret else [])]
+                    for d in (detecteur.detecter([eclaircir(f, self.lumiere)], facteur_conf=0.6)[0]
+                              if detecteur.pret else [])]
             self._capturer_thermique()
             self.horodatage = time.strftime("%Y-%m-%dT%H:%M:%S")
             self._sauver()
@@ -166,7 +176,8 @@ class Reference:
     def comparer(self, sid, image):
         """Comparaison de l'image à la référence de cette caméra (None s'il n'y en a pas)."""
         ref = self.images.get(sid)
-        return None if ref is None else Comparaison(ref, image, self.reglages)
+        # même traitement de faible lumière des deux côtés : on compare ce qui est comparable
+        return None if ref is None else Comparaison(eclaircir(ref, self.lumiere), image, self.reglages)
 
     def deja_la(self, sid, detection, comparaison=None):
         """Vrai si la détection existait déjà sur la référence.

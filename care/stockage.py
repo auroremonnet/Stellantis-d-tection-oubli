@@ -10,7 +10,8 @@ COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", 
             "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee",
             "mode", "alerte", "latence_alerte_s", "audio_statut", "sons_audio",
             "pleurs_score", "aboiement_score", "miaulement_score", "son_general",
-            "score_general", "erreur_audio", "methode_thermique", "resolution_thermique"]
+            "score_general", "erreur_audio", "methode_thermique", "resolution_thermique",
+            "luminosite", "cameras_aveugles"]
 
 
 def _bool(v):
@@ -60,7 +61,7 @@ class Journal:
             row = {k: ligne.get(k, "") for k in COLONNES}
             for k in ("vivant_rgb", "vivant_thermique", "reference_utilisee", "lumiere_changee"):
                 row[k] = "" if row[k] in ("", None) else int(bool(row[k]))
-            for k in ("classes_vivant", "objets", "cameras_vivant", "sons_audio"):
+            for k in ("classes_vivant", "objets", "cameras_vivant", "sons_audio", "cameras_aveugles"):
                 if isinstance(row[k], list):
                     row[k] = ", ".join(row[k])
             row = {k: ("" if v is None else v) for k, v in row.items()}

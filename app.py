@@ -65,7 +65,7 @@ else:
                              _th["peripherique"], _th["probleme"]).demarrer() if _th else None)
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
-REFERENCE = Reference(os.path.join(DATA, "reference"), CFG.get("reference"))
+REFERENCE = Reference(os.path.join(DATA, "reference"), CFG.get("reference"), CFG.get("lumiere"))
 if THERM:
     REFERENCE.lier_thermique(THERM)   # la thermique se compare, elle aussi, à l'habitacle vide
 COLLECTEUR = Collecteur(os.path.join(DATA, "collecte"), RGB)   # images pour le dataset v2

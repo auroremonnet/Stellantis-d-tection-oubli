@@ -264,6 +264,7 @@ function afficherResultat(e) {
       <dt>Référence</dt><dd>${e.reference_utilisee
         ? `${e.zones_nouvelles || 0} zone${e.zones_nouvelles > 1 ? "s" : ""} nouvelle${e.zones_nouvelles > 1 ? "s" : ""}${e.lumiere_changee ? ' · <span class="ref-warn">lumière changée, zones ignorées</span>' : ""}`
         : '<span class="no">non utilisée</span>'}</dd>
+      <dt>Lumière</dt><dd>${lumiere(e)}</dd>
       <dt>Évaluation</dt><dd>A1 ${tag(e.A1)} &nbsp; A2 ${tag(e.A2)}</dd>
       <dt>Latence</dt><dd>${e.latence_s} s</dd>
     </dl>
@@ -271,6 +272,15 @@ function afficherResultat(e) {
       <img src="/images/${e.id}_rgb.jpg" onerror="this.remove()" alt="RGB annoté">
       ${th == null ? "" : `<img src="/images/${e.id}_th.jpg" onerror="this.remove()" alt="Thermique">`}
     </div>`;
+}
+
+// Luminosité de la caméra la plus sombre, et caméras qui ne voient plus rien.
+function lumiere(e) {
+  if (e.luminosite == null || e.luminosite === "") return '<span class="no">n/d</span>';
+  const v = Number(e.luminosite);
+  const niveau = v >= 55 ? "jour" : v >= 20 ? "sombre, images moyennées et éclaircies" : "noir";
+  const aveugles = (Array.isArray(e.cameras_aveugles) ? e.cameras_aveugles.join(", ") : e.cameras_aveugles) || "";
+  return `${v} / 255 · ${niveau}${aveugles ? ` · <span class="ref-warn">caméras aveugles : ${esc(aveugles)}</span>` : ""}`;
 }
 
 // Détail par caméra de ce qui a été retenu : libellé, confiance du classifieur, caméra.

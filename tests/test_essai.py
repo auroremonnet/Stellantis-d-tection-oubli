@@ -135,7 +135,7 @@ def test_lumiere_changee_pas_de_filtre_par_les_pixels(tmp_path):
     détections déjà vues au même endroit sur la référence."""
     vide = np.full((480, 640, 3), 160, np.uint8)
     scene = vide.copy()
-    scene[:, :420] = 15                                        # les deux tiers de l'image ont changé
+    scene[:, :420] = 250                                       # les deux tiers de l'image ont changé
     ref = reference(tmp_path, {"rgb0": vide})
     ref.detections["rgb0"] = [("clés", 0.4, [50, 50, 90, 90])]
     m = MoteurFactice({"rgb0": Conclusion(objets=[Detection("clés", "valeur", 0.9, [52, 50, 91, 92]),
@@ -179,3 +179,96 @@ def test_vote_des_moteurs_historiques():
     reflet = {"nom": "watch", "type": "valeur", "conf": 0.3, "boite": [90, 90, 99, 99], "source": "yoloe"}
     c = m.conclure(None, [[tel], [tel], [tel, reflet]])
     assert [d.cle for d in c.objets] == ["téléphone"] and c.objets[0].extra["nom"] == "cell phone"
+
+
+# ---- faible lumière ----------------------------------------------------------
+class CameraDeNuit:
+    """Scène sombre et bruitée ; chaque lecture est une nouvelle image (nouveau bruit)."""
+
+    def __init__(self, sid="rgb0", niveau=30, bruit=20):
+        self.id, self.rng, self._horloge, self.lectures = sid, np.random.default_rng(0), 0, 0
+        self.scene = np.full((120, 160, 3), niveau, np.float32)
+        self.scene[40:80, 60:110] = niveau * 2                      # un objet un peu plus clair
+        self.bruit = bruit
+
+    @property
+    def stamp(self):
+        """La vraie Source horodate chaque image reçue dans son fil ; ici, une image par consultation."""
+        self._horloge += 1
+        return self._horloge
+
+    def derniere(self):
+        self.lectures += 1
+        img = np.clip(self.scene + self.rng.normal(0, self.bruit, self.scene.shape), 0, 255).astype(np.uint8)
+        img[0, 0] = 0
+        return img
+
+
+class MoteurTemoin(MoteurFactice):
+    def observer(self, images, facteur_conf=1.0):
+        self.vues = getattr(self, "vues", []) + list(images)
+        return [0 for _ in images]
+
+
+def test_de_nuit_les_images_sont_moyennees_puis_eclaircies():
+    from care.detection.lumiere import Reglages
+    cam, m = CameraDeNuit(), MoteurTemoin({})
+    r = analyser(m, rgb=[cam], n_images=3, lumiere=Reglages(rafale=4))
+    assert cam.lectures > 3 * 2                                   # des rafales, pas une image par passe
+    brute = cam.derniere()
+    derniere = m.vues[-1]
+    assert np.median(derniere) > 3 * np.median(brute)             # éclaircie
+    bruit_brut = brute[5:35, 5:50].astype(float).std() / max(1.0, brute[5:35, 5:50].mean())
+    bruit_net = derniere[5:35, 5:50].astype(float).std() / derniere[5:35, 5:50].mean()
+    assert bruit_net < bruit_brut / 2                             # et nettement moins bruitée
+    assert r["luminosite"] < 55 and r["cameras_aveugles"] == []
+
+
+def test_camera_bruitee_mais_claire_moyennee_sans_etre_eclaircie():
+    """Pénombre : la caméra monte son gain, l'image reste lisible mais bruitée."""
+    cam, m = CameraDeNuit(niveau=75, bruit=20), MoteurTemoin({})
+    analyser(m, rgb=[cam], n_images=3)
+    brute, vue = cam.derniere(), m.vues[-1]
+    assert abs(float(np.median(vue)) - float(np.median(brute))) < 8          # pas éclaircie
+    assert vue[5:35, 5:50].astype(float).std() < brute[5:35, 5:50].astype(float).std() / 2
+
+
+def test_bruit_mesure_sur_deux_images_et_insensible_a_un_objet_qui_bouge():
+    from care.detection.lumiere import bruit
+    rng = np.random.default_rng(1)
+    scene = np.full((240, 320, 3), 100, np.float32)
+    lire = lambda s: np.clip(scene + rng.normal(0, s, scene.shape), 0, 255).astype(np.uint8)  # noqa: E731
+    assert bruit(lire(1.5), lire(1.5)) < 3 < 7 < bruit(lire(15), lire(15)) < 20
+    a, b = lire(1.5), lire(1.5)
+    b[50:120, 50:120] = 255                                       # quelque chose a bougé entre les deux
+    assert bruit(a, b) < 3
+    assert bruit(a, np.zeros((10, 10, 3), np.uint8)) == 0.0
+
+
+def test_de_jour_rien_n_est_modifie():
+    img = np.full((120, 160, 3), 140, np.uint8)
+    img[0, 0] = 0
+    m = MoteurTemoin({})
+    r = analyser(m, rgb=[Source("rgb0", img)], n_images=2)
+    assert np.array_equal(m.vues[-1], img) and r["luminosite"] == 140
+
+
+def test_camera_dans_le_noir_declaree_aveugle():
+    noir = np.full((120, 160, 3), 3, np.uint8)                   # sous seuil_noir
+    noir[0, 0] = 0
+    r = analyser(MoteurTemoin({}), rgb=[Source("rgb0", noir), Source("rgb1", np.full((120, 160, 3), 140, np.uint8))])
+    assert r["cameras_aveugles"] == ["rgb0"] and r["luminosite"] == 3
+
+
+def test_eclaircir_et_moyenne():
+    from care.detection.lumiere import Moyenne, Reglages, eclaircir, luminosite
+    sombre = np.full((60, 80, 3), 25, np.uint8)
+    clair = eclaircir(sombre)
+    assert 105 < luminosite(clair) < 125                          # médiane ramenée vers la cible
+    jour = np.full((60, 80, 3), 120, np.uint8)
+    assert eclaircir(jour) is jour
+    assert Reglages.depuis_config({"rafale": 6, "inconnu": 1}).rafale == 6
+    moy = Moyenne()
+    assert moy.image() is None
+    moy.ajouter([np.full((2, 2, 3), 10, np.uint8), np.full((2, 2, 3), 30, np.uint8), np.zeros((3, 3, 3), np.uint8)])
+    assert moy.n == 2 and int(moy.image()[0, 0, 0]) == 20         # l'image d'une autre taille est ignorée
