@@ -18,6 +18,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from care import peripheriques
 from care.alertes import Alerteur
+from care.audio import DetecteurAudio
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
 from care.collecte import Collecteur
 from care.decision import decider
@@ -72,6 +73,7 @@ SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
 REFERENCE = Reference(os.path.join(DATA, "reference"), CFG.get("reference"))
 COLLECTEUR = Collecteur(os.path.join(DATA, "collecte"), RGB)   # images pour le dataset v2
+AUDIO = DetecteurAudio(CFG.get("audio", {}))
 
 CFG_ALERTES = dict(CFG.get("alertes", {}))
 if os.environ.get("CARE_NTFY_TOPIC"):  # le topic ntfy fait office de mot de passe
@@ -119,6 +121,7 @@ def _journaliser_evenement(evt):
 def _analyser_surveillance(contexte):
     brutes = _capturer_brutes()
     r = DETECTEUR.analyser(RGB, THERM, contexte.get("verite"), reference=None if DEMO else REFERENCE)
+    r.update(AUDIO.instantane())
     r["id"] = datetime.now().strftime("%Y%m%d-%H%M%S")
     r["_brutes"] = brutes
     return r
@@ -242,6 +245,7 @@ def etat():
         "rgb": [s.etat() for s in RGB],
         "thermique": THERM.etat() if THERM else None,
         "reference": REFERENCE.etat(),
+        "audio": AUDIO.etat(),
     })
 
 
@@ -318,6 +322,7 @@ def nouvel_essai():
     brutes = _capturer_brutes()
     try:
         r = DETECTEUR.analyser(RGB, THERM, d["verite"], reference=None if DEMO else REFERENCE)
+        r.update(AUDIO.instantane())
     except RuntimeError as e:
         return jsonify({"erreur": str(e)}), 503
     finally:

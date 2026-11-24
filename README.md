@@ -194,6 +194,14 @@ Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le no
 1. Faire un essai à vide, puis un essai avec la poupée chauffée.
 2. Régler ensuite dans `config.json` le seuil (`seuil_celsius` en radiométrique, `seuil_8bit` sinon) et `pixels_chauds_min`.
 
+## Microphone et sons à risque
+
+Installer les dépendances avec `python -m pip install -r requirements-audio.txt`, puis démarrer le banc. Le modèle AST AudioSet est téléchargé au premier lancement. Le microphone de l'ordinateur qui exécute `app.py` est écouté en continu, y compris en mode démo. `python lister_micros.py` permet de choisir son index dans `config.json` ou `config.local.json`. Les sons ne sont pas enregistrés sur disque.
+
+Le tableau de bord affiche le niveau du signal, les hypothèses générales et les hypothèses hors parole, ainsi que les scores pleurs, aboiement et miaulement. Les fenêtres de 3 s et 1,5 s alternent pour mieux repérer les sons brefs. Les scores AST ne sont pas des probabilités calibrées : vérifier le seuil `audio.seuil` avec des essais positifs et négatifs dans l'habitacle. Un son masqué par une conversation peut rester indétectable.
+
+Un pleur, un aboiement ou un miaulement reconnu au-dessus du seuil entre dans la **décision d'alerte** lors d'un essai manuel ou de l'analyse de surveillance automatique. Comme pour les autres alertes manuelles, la présence d'un adulte dans l'image empêche l'envoi. Les verdicts de comparaison A1 (RGB) et A2 (RGB + thermique) restent calculés séparément : l'audio apparaît dans la colonne « Micro » et dans l'alerte, sans modifier rétroactivement ces métriques. Si le micro n'est pas prêt, la décision utilise les autres capteurs.
+
 ## Données
 
 - `data/essais/essais.csv` : un essai par ligne, s'ouvre directement dans Excel (bouton **Exporter CSV**).
@@ -230,6 +238,8 @@ care/decision.py     règle d'alerte unique (critique / objet / rien)
 care/alertes.py      notifications ntfy (cooldown, rappels, levée d'alerte)
 care/metriques_detection.py  précision / rappel boîte par boîte, tous moteurs
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
+care/audio.py        écoute continue et classification AST AudioSet
+lister_micros.py     liste des entrées audio disponibles
 entrainement/        entraînement du modèle (script + notebook Colab)
 outils/rejouer.py    rejoue les images des essais et note la détection (avant / après)
 outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté

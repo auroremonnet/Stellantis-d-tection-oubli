@@ -3,19 +3,19 @@ setlocal
 cd /d "%~dp0"
 title CARE dashboard
 
-REM ---- Nettoyer un ancien environnement casse ----
-if exist ".venv" rmdir /s /q ".venv"
-
 REM ---- 1. Trouver Python (Anaconda en priorite) ----
 set "PY="
 if exist "%USERPROFILE%\anaconda3\python.exe" set "PY=%USERPROFILE%\anaconda3\python.exe"
 if not defined PY if exist "%USERPROFILE%\miniconda3\python.exe" set "PY=%USERPROFILE%\miniconda3\python.exe"
 if not defined PY if exist "%LOCALAPPDATA%\anaconda3\python.exe" set "PY=%LOCALAPPDATA%\anaconda3\python.exe"
-if not defined PY (
-  where python >nul 2>nul && set "PY=python"
+for %%V in (314 313 312 311 310) do (
+  if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe" set "PY=%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe"
 )
 if not defined PY (
-  echo [ERREUR] Python introuvable. Lance depuis l'Anaconda Prompt : python app.py --demo
+  python --version >nul 2>nul && set "PY=python"
+)
+if not defined PY (
+  echo [ERREUR] Python introuvable. Installe Python ou ajoute-le au PATH.
   pause & exit /b 1
 )
 echo Python utilise : %PY%
@@ -25,8 +25,9 @@ REM ---- 2. Dependances (legeres pour la demo, YOLO en plus pour le reel) ----
   echo Installation des dependances de base...
   "%PY%" -m pip install flask opencv-python numpy || (echo [ERREUR] installation & pause & exit /b 1)
 )
-echo %* | find /i "--demo" >nul
-if errorlevel 1 (
+set "DEMO="
+for %%A in (%*) do if /I "%%~A"=="--demo" set "DEMO=1"
+if not defined DEMO (
   "%PY%" -c "import ultralytics" 2>nul || (
     echo Installation de YOLO ^(ultralytics + torch, plusieurs minutes^)...
     "%PY%" -m pip install ultralytics || (echo [ERREUR] installation YOLO & pause & exit /b 1)
