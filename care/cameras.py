@@ -14,6 +14,90 @@ import numpy as np
 
 BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
 
+BACKENDS = {"defaut": BACKEND, "dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "auto": cv2.CAP_ANY}
+FLUX_DEFAUT = {"backend": "defaut", "fourcc": "Y16 ", "convert_rgb": 0}
+TEMP_PLAUSIBLE_C = (-40.0, 120.0)  # au-delà, le format supposé des températures est faux
+
+# Valeurs issues de la simulation, à recaler sur le banc ; surchargeables dans config.json → thermique.
+#   methode : contraste (rien à capturer), reference (compare à l'habitacle vide), seuil_fixe
+#   zones_ignorees : [[x1, y1, x2, y2], ...] en part de l'image (0 à 1), réglées à l'installation
+#   diviseur_kelvin : valeur brute / diviseur = kelvins (100 pour le format TLinear)
+DEFAUTS_THERMIQUE = {"methode": "contraste", "delta_c": 2.5, "temp_max_vivant_c": 42.0, "temp_corps_c": 37.0,
+                     "part_min_image": 0.004, "zones_ignorees": [], "diviseur_kelvin": 100, "flux": FLUX_DEFAUT}
+
+
+def temperatures(f, diviseur=100):
+    """Image 16 bits → températures en °C."""
+    return f.astype(np.float32) / diviseur - 273.15
+
+
+def temperature_plausible(temp):
+    return TEMP_PLAUSIBLE_C[0] <= float(np.median(temp)) <= TEMP_PLAUSIBLE_C[1]
+
+
+def ouvrir_flux(index, flux):
+    cap = cv2.VideoCapture(index, BACKENDS[flux.get("backend", "defaut")])
+    if flux.get("fourcc"):
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*flux["fourcc"]))
+    cap.set(cv2.CAP_PROP_CONVERT_RGB, flux.get("convert_rgb", 0))
+    return cap
+
+
+def normaliser_brut(f, largeur=0, hauteur=0):
+    """Selon le pilote, le 16 bits arrive tel quel, en 2 canaux de 8 bits ou en tampon à plat.
+    Certaines caméras empilent deux images (256x384) : l'image visible, puis les températures."""
+    if f.dtype == np.uint8 and f.ndim == 3 and f.shape[2] == 2:
+        f = f[..., 0].astype(np.uint16) | (f[..., 1].astype(np.uint16) << 8)
+    elif f.ndim == 2 and 1 in f.shape and largeur and hauteur:
+        if f.dtype == np.uint8 and f.size == 2 * largeur * hauteur:
+            f = np.frombuffer(f.tobytes(), dtype="<u2").reshape(hauteur, largeur).copy()
+        elif f.dtype == np.uint16 and f.size == largeur * hauteur:
+            f = f.reshape(hauteur, largeur)
+    if f.dtype == np.uint16 and f.ndim == 2 and f.shape[0] * 2 == f.shape[1] * 3:
+        return f[f.shape[0] // 2:]  # format 2:3 : deux images 4:3 empilées, les températures en bas
+    return f
+
+
+def masque_zones(forme, zones):
+    """Vrai sur les pixels des zones ignorées, indiquées en part de l'image."""
+    h, w = forme[:2]
+    masque = np.zeros((h, w), bool)
+    for x1, y1, x2, y2 in zones:
+        masque[round(y1 * h):round(y2 * h), round(x1 * w):round(x2 * w)] = True
+    return masque
+
+
+def fond_uniforme(temp, p):
+    """Fond estimé dans l'image elle-même : aucune capture à faire par l'utilisateur."""
+    ignore = masque_zones(temp.shape, p.get("zones_ignorees", []))
+    valeurs = temp[~ignore] if not ignore.all() else temp
+    return np.full(temp.shape, np.median(valeurs), np.float32)
+
+
+def masque_vivant(temp, ref, p):
+    """Zones qui peuvent être un corps vivant, par écart à ref (fond de l'image ou habitacle vide)."""
+    p = {**DEFAUTS_THERMIQUE, **p}
+    ignore = masque_zones(temp.shape, p["zones_ignorees"])
+    diff = temp - ref
+    diff = diff - np.median(diff[~ignore] if not ignore.all() else diff)  # réchauffement global de l'habitacle
+    plus_chaud = diff > p["delta_c"]
+    # dans un habitacle plus chaud que le corps, un être vivant apparaît comme une zone plus froide
+    plus_froid = (ref > p["temp_corps_c"]) & (diff < -p["delta_c"])
+    # marge : le flou de l'optique déborde du bord d'une zone ignorée
+    marge = cv2.dilate(ignore.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    masque = (plus_chaud | plus_froid) & ~marge
+    # trop chaud pour être vivant (gourde, objet au soleil) : on l'écarte avec son halo de flou,
+    # sans écarter tout ce qui le touche, pour qu'un objet chaud ne masque pas un enfant
+    brulant = plus_chaud & (temp > p["temp_max_vivant_c"])
+    if brulant.any():
+        halo = cv2.dilate(brulant.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        masque &= ~halo
+    # taille en part de l'image : le réglage ne dépend pas de la résolution de la caméra
+    _, etiquettes, stats, _ = cv2.connectedComponentsWithStats(masque.astype(np.uint8), connectivity=8)
+    taille_min = max(1, p["part_min_image"] * masque.size)
+    gardees = [i for i in range(1, len(stats)) if stats[i, cv2.CC_STAT_AREA] >= taille_min]
+    return np.isin(etiquettes, gardees)
+
 
 class Source:
     """Caméra RGB réelle, lue en continu dans un thread."""
@@ -87,29 +171,47 @@ class Source:
 
 
 class SourceThermique(Source):
-    """Caméra thermique 80x60. Tente le flux brut 16 bits (radiométrique)."""
+    """Caméra thermique, à la résolution qu'elle fournit. Tente le flux brut 16 bits (radiométrique)."""
 
     def __init__(self, sid, index, label, params):
         super().__init__(sid, index, label, (160, 120))
-        self.params = params
+        self.params = {**DEFAUTS_THERMIQUE, **params}
         self.mode = "?"
+        self.methode = "?"
+        self.reference = None  # températures de l'habitacle vide (°C), posées par care.reference
 
     def _ouvrir(self):
-        cap = cv2.VideoCapture(self.index, BACKEND)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"Y16 "))
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
-        return cap
+        return ouvrir_flux(self.index, {**FLUX_DEFAUT, **self.params["flux"]})
+
+    def _lire(self, cap):
+        ok, f = cap.read()
+        if ok and f is not None:
+            f = normaliser_brut(f, int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        return ok, f
+
+    def vers_celsius(self, f):
+        return temperatures(f, self.params["diviseur_kelvin"])
 
     def masque_chaud(self, f):
         """Retourne (masque des pixels chauds, image 8 bits, température max ou None)."""
         p = self.params
         if f.dtype == np.uint16:
-            self.mode = "radiométrique"
-            temp = f.astype(np.float32) / 100.0 - 273.15  # format TLinear (centi-Kelvin)
+            temp = self.vers_celsius(f)
+            self.mode = "radiométrique" if temperature_plausible(temp) else "16 bits non calibré"
             # échelle fixe 15-40 °C : un habitacle vide reste sombre au lieu d'amplifier le bruit
             img = np.clip((temp - 15) * (255 / 25), 0, 255).astype(np.uint8)
-            return temp > p["seuil_celsius"], img, float(temp.max())
+            tmax = float(temp.max())
+            if p["methode"] == "seuil_fixe":
+                self.methode = "seuil fixe"
+                return temp > p["seuil_celsius"], img, tmax
+            ref = self.reference
+            if p["methode"] == "reference" and ref is not None and ref.shape == temp.shape:
+                self.methode = "référence"
+                return masque_vivant(temp, ref, p), img, tmax
+            self.methode = "contraste"
+            return masque_vivant(temp, fond_uniforme(temp, p), p), img, tmax
         self.mode = "8 bits"
+        self.methode = "seuil fixe"  # pas de température : aucune comparaison fiable
         g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f
         return g > p["seuil_8bit"], g, None
 
@@ -118,9 +220,11 @@ class SourceThermique(Source):
         if f is None:
             return None
         masque, img, tmax = self.masque_chaud(f)
-        return {"pixels_chauds": int(masque.sum()), "tmax": tmax, "mode": self.mode,
-                "chaud": int(masque.sum()) >= self.params["pixels_chauds_min"], "img": img,
-                "masque": masque}
+        nb = int(masque.sum())
+        # contraste et référence : masque_vivant a déjà écarté les zones trop petites
+        chaud = nb >= self.params["pixels_chauds_min"] if self.methode == "seuil fixe" else nb > 0
+        return {"pixels_chauds": nb, "tmax": tmax, "mode": self.mode, "methode": self.methode,
+                "resolution": f"{f.shape[1]}x{f.shape[0]}", "chaud": chaud, "img": img, "masque": masque}
 
     def apercu(self):
         m = self.mesure()
@@ -137,7 +241,8 @@ class SourceThermique(Source):
     def etat(self):
         e = super().etat()
         m = self.mesure() if e["ok"] else None
-        e.update({"mode": self.mode,
+        e.update({"mode": self.mode, "methode": self.methode,
+                  "resolution": None if m is None else m["resolution"],
                   "pixels_chauds": None if m is None else m["pixels_chauds"],
                   "tmax": None if m is None or m["tmax"] is None else round(m["tmax"], 1)})
         return e

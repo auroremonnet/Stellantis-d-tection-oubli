@@ -14,10 +14,12 @@ from datetime import datetime
 from threading import Timer
 
 import cv2
+import numpy as np
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file, send_from_directory
 
 from care.alertes import Alerteur
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
+from care.config import charger_config
 from care.decision import decider
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.reference import Reference
@@ -32,15 +34,7 @@ parser.add_argument("--port", type=int, default=5000)
 parser.add_argument("--no-browser", action="store_true")
 ARGS = parser.parse_args()
 
-with open(os.path.join(RACINE, "config.json"), encoding="utf-8") as fh:
-    CFG = json.load(fh)
-# Réglages propres au poste, hors dépôt (le dépôt est public) : config.local.json est
-# ignoré par git et fusionné section par section par-dessus config.json.
-_LOCAL = os.path.join(RACINE, "config.local.json")
-if os.path.exists(_LOCAL):
-    with open(_LOCAL, encoding="utf-8") as fh:
-        for _k, _v in json.load(fh).items():
-            CFG[_k] = {**CFG.get(_k, {}), **_v} if isinstance(_v, dict) else _v
+CFG = charger_config(RACINE)
 
 DEMO = ARGS.demo
 DATA = os.path.join(RACINE, "data", "demo" if DEMO else "essais")
@@ -61,6 +55,8 @@ DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
 REF_PARAMS = {"iou_fixe": 0.5, "seuil_changement": 35, "aire_min": 1500, "part_max_image": 0.6, "zones_max": 6}
 REF_PARAMS.update(CFG.get("reference", {}))
 REFERENCE = Reference(os.path.join(DATA, "reference"), REF_PARAMS)
+if THERM:
+    REFERENCE.lier_thermique(THERM)
 
 CFG_ALERTES = dict(CFG.get("alertes", {}))
 if os.environ.get("CARE_NTFY_TOPIC"):  # le topic ntfy fait office de mot de passe
@@ -87,6 +83,9 @@ def _enregistrer(r, contexte, mode, brutes=None, niveau_alerte=None):
         os.makedirs(BRUTES, exist_ok=True)
         for sid, f in brutes.items():
             cv2.imwrite(os.path.join(BRUTES, f"{eid}_{sid}.jpg"), f)
+    if r.get("image_thermique_brute") is not None and CFG.get("sauver_images_brutes", True):
+        os.makedirs(BRUTES, exist_ok=True)  # .npy : un JPEG perdrait les températures
+        np.save(os.path.join(BRUTES, f"{eid}_thermal.npy"), r["image_thermique_brute"])
     if contexte.get("verite") not in VERITES or not contexte.get("scenario"):
         return eid, None  # surveillance « libre » : pas de vérité terrain, pas de ligne au journal
     ligne = {k: v for k, v in r.items() if not k.startswith("image")}

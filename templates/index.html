@@ -41,14 +41,14 @@
           <span class="cam-off" id="off-thermal">Hors ligne</span>
         </div>
         <div class="thermal-info">
-          <h3>Caméra thermique 80×60</h3>
+          <h3>Caméra thermique</h3>
           <dl>
             <div><dt>Mode</dt><dd id="th-mode">—</dd></div>
+            <div><dt>Résolution</dt><dd id="th-res">—</dd></div>
             <div><dt>Pixels chauds</dt><dd id="th-px">—</dd></div>
             <div><dt>T° max</dt><dd id="th-tmax">—</dd></div>
           </dl>
-          <p class="muted small">Contour blanc = zone au-dessus du seuil. Calibrer le seuil dans
-            <code>config.json</code> avec un essai à vide puis un essai avec la poupée chauffée.</p>
+          <p class="muted small">Contour blanc = zone retenue comme chaude. Mise en route : <code>outils/diagnostic_thermique.py</code>.</p>
         </div>
       </div>
     </div>

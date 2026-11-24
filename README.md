@@ -128,8 +128,32 @@ python outils/evaluer.py --donnees datasets/care-oubli-v1/data.yaml --moteurs yo
 
 Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le nombre de pixels chauds et la T° max.
 
-1. Faire un essai à vide, puis un essai avec la poupée chauffée.
-2. Régler ensuite dans `config.json` le seuil (`seuil_celsius` en radiométrique, `seuil_8bit` sinon) et `pixels_chauds_min`.
+La caméra et sa résolution sont lues automatiquement, aucune valeur de résolution n'est à saisir. Mise en route et essais dans la voiture : [`docs/protocole-thermique-voiture.md`](docs/protocole-thermique-voiture.md).
+
+```
+py outils/diagnostic_thermique.py sonder --appliquer
+py outils/diagnostic_thermique.py direct
+```
+
+`config.json` → `thermique` → `methode` choisit la détection :
+
+| Méthode | Principe | Usage |
+|---|---|---|
+| `contraste` (par défaut) | Cherche ce qui se détache du reste de la même image, hors `zones_ignorees` | Voiture : rien à capturer par l'utilisateur |
+| `reference` | Cherche ce qui a changé depuis la référence « habitacle vide » | Comparaison sur le banc |
+| `seuil_fixe` | Tout ce qui dépasse `seuil_celsius` | Ancienne méthode, et seule possible sans températures (8 bits) |
+
+Réglages à recaler sur les essais : `delta_c` (écart en °C), `part_min_image` (taille minimale d'une zone, en part de l'image, donc indépendante de la résolution) et `temp_max_vivant_c` (au-delà, trop chaud pour être vivant).
+
+**Limites :** quand l'habitacle approche la température du corps (simulation : dès 26 °C sous une couverture, 28 °C pour un animal, 32 à 40 °C pour un enfant), la thermique voit peu ou plus de contraste et peut rater une présence : les caméras RGB restent indispensables. Sous `temp_max_vivant_c`, un siège encore chaud ou un sac au soleil déclenche une fausse alerte.
+
+### Tester sans caméra
+
+```
+py outils/simuler_thermique.py
+```
+
+Génère des images thermiques de synthèse pour chaque scénario, les passe dans le vrai code de détection et écrit un rapport dans `rapports/`. Les températures sont des **hypothèses** (en tête du script) : l'outil compare des réglages, il ne remplace pas les essais sur le banc.
 
 ## Données
 
@@ -158,6 +182,8 @@ care/metriques_detection.py  précision / rappel boîte par boîte, tous moteurs
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
 entrainement/        entraînement du modèle (script + notebook Colab)
 outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté
+outils/simuler_thermique.py  simulation de la thermique sur S1 à S8, sans caméra
+outils/diagnostic_thermique.py  mise en route de la vraie caméra, enregistrement et rejeu
 tests/               tests automatiques (pytest)
 templates/, static/  dashboard + page de suivi pour téléphone (/suivi)
 ```

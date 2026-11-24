@@ -8,7 +8,7 @@ import threading
 COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", "vivant_thermique",
             "classes_vivant", "objets", "cameras_vivant", "pixels_chauds", "tmax", "latence_s",
             "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee",
-            "mode", "alerte", "latence_alerte_s"]
+            "mode", "alerte", "latence_alerte_s", "methode_thermique", "resolution_thermique"]
 
 
 def _bool(v):

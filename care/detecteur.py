@@ -277,7 +277,8 @@ class Detecteur:
         compte = {}                                   # nom -> nb d'images où il est vu (toutes caméras)
         par_cam = {s.id: {"vivant": set(), "valeur": set(), "frame": None, "dets": [], "fixes": [],
                           "masque": None, "nb_masques": 0} for s in rgb}
-        hits_th, pix_max, tmax, img_th = 0, 0, None, None
+        hits_th, pix_max, tmax, img_th, brute_th = 0, 0, None, None, None
+        methode_th, resolution_th = "", ""
 
         with self._lock:
             for _ in range(n):
@@ -308,11 +309,13 @@ class Detecteur:
                     if m is not None:
                         hits_th += int(m["chaud"])
                         pix_max = max(pix_max, m["pixels_chauds"])
+                        methode_th, resolution_th = m["methode"], m["resolution"]
                         if m["tmax"] is not None:
                             tmax = max(tmax or -999, m["tmax"])
                 time.sleep(0.05)
             if thermique is not None:
                 img_th = thermique.apercu()
+                brute_th = thermique.derniere()
 
             # ---- consolidation sur l'essai ----
             presents = {nom for nom, k in compte.items() if k / n >= ratio}
@@ -361,9 +364,12 @@ class Detecteur:
             "lumiere_changee": lumiere,
             "pixels_chauds": pix_max if thermique is not None else None,
             "tmax": None if tmax is None else round(tmax, 1),
+            "methode_thermique": methode_th,
+            "resolution_thermique": resolution_th,
             "latence_s": round(time.time() - t0, 2),
             "images_rgb": annotees,
             "image_thermique": img_th,
+            "image_thermique_brute": brute_th,
         }
 
     def _annoter(self, frame, gardees, fixes):

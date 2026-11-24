@@ -77,9 +77,16 @@
     "zones_max": 6
   },
   "thermique": {
+    "methode": "contraste",
     "seuil_celsius": 30.0,
     "seuil_8bit": 200,
-    "pixels_chauds_min": 20
+    "pixels_chauds_min": 20,
+    "delta_c": 2.5,
+    "temp_max_vivant_c": 42.0,
+    "temp_corps_c": 37.0,
+    "part_min_image": 0.004,
+    "zones_ignorees": [],
+    "diviseur_kelvin": 100
   },
   "scenarios": [
     {

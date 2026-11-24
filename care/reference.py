@@ -46,12 +46,48 @@ class Reference:
         self.images = {}      # sid -> image BGR
         self.detections = {}  # sid -> [(nom, conf, [x1,y1,x2,y2])]
         self.horodatage = None
+        self.thermique = None   # températures de l'habitacle vide (°C)
+        self._source_th = None
         os.makedirs(dossier, exist_ok=True)
         self._charger()
+        self._charger_thermique()
+
+    def lier_thermique(self, source):
+        """Associe la caméra thermique : elle reçoit la référence à chaque changement."""
+        self._source_th = source
+        source.reference = self.thermique
 
     # ---- persistance --------------------------------------------------
     def _meta(self):
         return os.path.join(self.dossier, "reference.json")
+
+    def _fichier_thermique(self):
+        return os.path.join(self.dossier, "thermique.npy")  # pas de JPEG : il perdrait les températures
+
+    def _charger_thermique(self):
+        if os.path.exists(self._fichier_thermique()):
+            try:
+                self.thermique = np.load(self._fichier_thermique(), allow_pickle=False)
+            except (OSError, ValueError):  # une référence illisible n'empêche pas de démarrer
+                self.thermique = None
+
+    def _capturer_thermique(self, n_images):
+        """Médiane de plusieurs images : le bruit du capteur n'entre pas dans la référence."""
+        s = self._source_th
+        if s is None:
+            return
+        images = []
+        for _ in range(n_images):
+            f = s.derniere()
+            if f is not None and f.dtype == np.uint16:
+                images.append(s.vers_celsius(f))
+            time.sleep(0.15)
+        self.thermique = np.median(images, axis=0).astype(np.float32) if images else None
+        s.reference = self.thermique
+        if self.thermique is not None:
+            np.save(self._fichier_thermique(), self.thermique)
+        elif os.path.exists(self._fichier_thermique()):
+            os.remove(self._fichier_thermique())  # jamais de référence périmée
 
     def _charger(self):
         if not os.path.exists(self._meta()):
@@ -95,6 +131,7 @@ class Reference:
                     time.sleep(0.15)
                 if s.id in self.images:
                     self.detections[s.id] = dets_cam
+            self._capturer_thermique(n_images)
             self.horodatage = time.strftime("%Y-%m-%dT%H:%M:%S")
             self._sauver()
         return self.etat()
@@ -107,13 +144,19 @@ class Reference:
                     os.remove(p)
             if os.path.exists(self._meta()):
                 os.remove(self._meta())
+            if os.path.exists(self._fichier_thermique()):
+                os.remove(self._fichier_thermique())
             self.images, self.detections, self.horodatage = {}, {}, None
+            self.thermique = None
+            if self._source_th is not None:
+                self._source_th.reference = None
 
     def etat(self):
         return {
             "active": bool(self.images),
             "horodatage": self.horodatage,
             "cameras": sorted(self.images),
+            "thermique": self.thermique is not None,
             "detections_fixes": {sid: len(d) for sid, d in self.detections.items()},
         }
 
