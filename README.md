@@ -161,6 +161,17 @@ La comparaison résiste à l'auto-exposition de la caméra et à un léger dépl
 l'image a changé (caméra bougée, nuit tombée), le résultat indique « lumière changée » : la
 référence est à refaire.
 
+### De nuit et en pénombre
+
+Quand une caméra est bruitée (gain monté par manque de lumière), l'essai moyenne des rafales
+d'images avant de les montrer aux modèles, et les éclaircit si elles sont sombres
+(`care/detection/lumiere.py`, réglages `lumiere` de `config.json`). Le résultat indique la
+luminosité de la caméra la plus sombre et les caméras « aveugles » (noir complet). En simulation
+sur les images du 06/11, un téléphone reste retrouvé en pénombre et les habitacles vides restent
+sans alerte ; dans le noir complet, la RGB ne voit rien : il faut le plafonnier, et ce sont la
+thermique et le micro qui détectent une présence. Capturer la référence **dans la même lumière**
+que l'essai (elle est refaite à chaque armement de la surveillance).
+
 ### Régler et étendre
 
 - Ajouter un objet : `detection.catalogue` dans `config.json`, sans toucher au code, par ex.
@@ -177,22 +188,60 @@ pistes testées : [`docs/recherche-detection-objets.md`](docs/recherche-detectio
 
 La caméra thermique du banc s'annonce « UVC Camera » (USB 2BDF:0102, capteur 256×192 de la
 famille InfiRay). Ce n'est pas une TC001 : son flux 256×392 contient des **comptes bruts du capteur**,
-pas des températures. Le banc les lit en mode **relatif** : un pixel est chaud s'il dépasse le fond
-de la scène de `thermique.seuil_comptes` (200 par défaut, à calibrer). Une vraie Topdon TC001
-(flux 256×384, températures en °C) reste gérée : `thermique.resolution = [256, 384]`.
+pas des températures (mode « relatif »). Une vraie Topdon TC001 (flux 256×384, températures en °C)
+et les caméras 16 bits simples (Lepton) restent gérées.
 
 Sous Windows, le flux brut n'est lisible qu'avec Media Foundation (`thermique.backend = "msmf"`) :
 DirectShow le convertit en couleur et les données sont perdues (le banc n'alerte alors plus, au lieu
 d'alerter en permanence). Vérifier, dashboard arrêté : `python outils/diag_thermique.py`.
-Dans le dashboard, le panneau doit afficher « relatif (comptes bruts) » ou « radiométrique (TC001) ».
 
-**Calibrer `seuil_comptes`** : habitacle vide (hub USB et PC hors du champ), le nombre de pixels
-chauds doit rester ~0 ; avec la poupée chauffée ou une main, il doit dépasser `pixels_chauds_min`.
+`config.json` → `thermique` → `methode` choisit la détection (`care/thermique.py`) :
 
-Le panneau thermique affiche en direct le mode (radiométrique ou 8 bits), le nombre de pixels chauds et la T° max.
+| Méthode | Principe | Usage |
+|---|---|---|
+| `reference` (par défaut) | Ce qui est plus chaud que le même habitacle, vide, capturé avec la référence | Le banc et la voiture : un siège chauffé par le soleil ne déclenche pas |
+| `contraste` | Ce qui se détache du reste de la même image, hors `zones_ignorees` | Repli automatique tant qu'aucune référence n'est capturée |
+| `seuil_fixe` | Tout ce qui dépasse `seuil_celsius` (ou `seuil_comptes` au-dessus du fond) | Ancienne méthode, et seule possible sans mesure (8 bits) |
 
-1. Faire un essai à vide, puis un essai avec la poupée chauffée.
-2. Régler ensuite dans `config.json` le seuil (`seuil_celsius` en radiométrique, `seuil_8bit` sinon) et `pixels_chauds_min`.
+La référence thermique est prise en même temps que la référence RGB (bouton **Capturer la
+référence**, ou armement de la surveillance). Un réchauffement global entre-temps est retiré.
+
+**Régler le seuil** : le panneau thermique affiche « Écart max » et le seuil appliqué. Habitacle
+vide, l'écart doit rester sous le seuil ; avec la poupée chauffée ou une main, il doit le dépasser.
+Le seuil est `delta_comptes` avec la caméra du banc (200 par défaut), `delta_c` (2,5 °C) avec une
+caméra radiométrique. Autres réglages : `part_min_image` (taille minimale d'une zone, en part de
+l'image), `zones_ignorees` (vitres, tableau de bord) et `temp_max_vivant_c` (radiométrique seulement).
+
+```
+python outils/diagnostic_thermique.py direct     # image en direct, écart mesuré, S pour enregistrer
+python outils/diagnostic_thermique.py zones      # dessiner les zones à ignorer
+python outils/diagnostic_thermique.py rejouer    # repasser les enregistrements, sans caméra
+```
+
+Procédure complète dans la voiture : [`docs/protocole-thermique-voiture.md`](docs/protocole-thermique-voiture.md).
+
+**Limites :** quand l'habitacle approche la température du corps (simulation : dès 26 °C sous une
+couverture, 28 °C pour un animal, 32 à 40 °C pour un enfant), la thermique voit peu de contraste
+et peut rater une présence : les caméras RGB restent indispensables. Sans référence, un siège encore
+chaud ou un sac au soleil déclenche une fausse alerte.
+
+### Tester sans caméra
+
+```
+python outils/simuler_thermique.py
+```
+
+Génère des images thermiques de synthèse pour chaque scénario, les passe dans le vrai code de
+détection et écrit un rapport dans `rapports/`. Les températures sont des **hypothèses** (en tête du
+script) : l'outil compare des réglages, il ne remplace pas les essais sur le banc.
+
+## Microphone et sons à risque
+
+`lancer.bat` installe les dépendances du micro au premier lancement (à la main : `python -m pip install -r requirements-audio.txt`). Le modèle AST AudioSet est téléchargé au premier démarrage : **le faire une fois avec une connexion internet avant d'aller dans la voiture**, sinon le panneau Micro reste en erreur (le reste du banc fonctionne). L'analyse audio tourne en continu sur le processeur : si les essais ralentissent, augmenter `audio.intervalle_s` ou passer `audio.active` à `false`. Le microphone de l'ordinateur qui exécute `app.py` est écouté en continu, y compris en mode démo. `python lister_micros.py` permet de choisir son index dans `config.json` ou `config.local.json`. Les sons ne sont pas enregistrés sur disque.
+
+Le tableau de bord affiche le niveau du signal, les hypothèses générales et les hypothèses hors parole, ainsi que les scores pleurs, aboiement et miaulement. Les fenêtres de 3 s et 1,5 s alternent pour mieux repérer les sons brefs. Les scores AST ne sont pas des probabilités calibrées : vérifier le seuil `audio.seuil` avec des essais positifs et négatifs dans l'habitacle. Un son masqué par une conversation peut rester indétectable.
+
+Un pleur, un aboiement ou un miaulement reconnu au-dessus du seuil entre dans la **décision d'alerte** lors d'un essai manuel ou de l'analyse de surveillance automatique. Comme pour les autres alertes manuelles, la présence d'un adulte dans l'image empêche l'envoi. Les verdicts de comparaison A1 (RGB) et A2 (RGB + thermique) restent calculés séparément : l'audio apparaît dans la colonne « Micro » et dans l'alerte, sans modifier rétroactivement ces métriques. Si le micro n'est pas prêt, la décision utilise les autres capteurs.
 
 ## Données
 
@@ -224,14 +273,22 @@ care/detection/      détection RGB : localiser → nommer → trancher
     changement.py      comparaison à la référence (éclairage, recalage, zones nouvelles)
     essai.py           analyse d'un essai multi-caméras
     rendu.py           images annotées, mosaïque
-care/reference.py    référence habitacle vide : capture, persistance, « déjà là »
+care/reference.py    référence habitacle vide (RGB et thermique) : capture, persistance, « déjà là »
+care/thermique.py    analyse d'une image thermique : référence, contraste, seuil fixe
+care/audio.py        écoute du micro : pleurs, aboiement, miaulement
+care/config.py       lecture de config.json + config.local.json
 care/surveillance.py machine à états de la surveillance automatique + boucle de fond
 care/decision.py     règle d'alerte unique (critique / objet / rien)
 care/alertes.py      notifications ntfy (cooldown, rappels, levée d'alerte)
 care/metriques_detection.py  précision / rappel boîte par boîte, tous moteurs
 care/stockage.py     journal CSV + métriques (rappel, FN, faux positifs, précision)
+care/audio.py        écoute continue et classification AST AudioSet
+lister_micros.py     liste des entrées audio disponibles
 entrainement/        entraînement du modèle (script + notebook Colab)
 outils/rejouer.py    rejoue les images des essais et note la détection (avant / après)
+outils/simuler_thermique.py     simulation de la thermique sur S1 à S8, sans caméra
+outils/diagnostic_thermique.py  thermique : image en direct, zones à ignorer, enregistrement et rejeu
+outils/diag_thermique.py        thermique : vérifie que la caméra du banc donne ses données brutes
 outils/evaluer.py    comparaison des moteurs sur un jeu de test annoté
 outils/preparer_lot.py lot Roboflow pré-annoté à partir des images collectées
 tests/               tests automatiques (pytest)

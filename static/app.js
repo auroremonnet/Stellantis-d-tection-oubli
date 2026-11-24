@@ -40,6 +40,42 @@ function pill(el, etat, texte) {
   el.innerHTML = `<i></i>${texte}`;
 }
 
+function afficherAudio(au) {
+  const mesure = au.mesure;
+  const messages = {
+    desactive: "Désactivé dans config.json",
+    chargement: "Chargement du modèle ou connexion au micro…",
+    attente: "Écoute en cours, première analyse en attente…",
+    erreur: `Micro indisponible : ${mesure.erreur_audio}`,
+  };
+  $("#audio-message").textContent = mesure.audio_statut === "ok"
+    ? mesure.sons_audio.length ? `Son détecté récemment : ${mesure.sons_audio.join(", ")}` : "Écoute en cours · aucun son ciblé"
+    : messages[mesure.audio_statut] || "En attente";
+  $("#audio-micro").textContent = au.micro ? `Entrée : ${au.micro}` : "";
+  $("#audio-niveau").value = au.niveau_db == null ? 0 : Math.max(0, Math.min(1, (au.niveau_db + 60) / 60));
+  $("#audio-niveau-val").textContent = au.niveau_db == null ? "—" : `${au.niveau_db} dBFS`;
+  $("#audio-general").textContent = mesure.audio_statut === "ok"
+    ? mesure.son_general ? `Son probable : ${mesure.son_general}` : "Son non identifié avec assez de certitude"
+    : "En attente d'une analyse audio";
+  const remplir = (selecteur, sons) => $(selecteur).replaceChildren(...(sons || []).map((son) => {
+    const ligne = document.createElement("li");
+    ligne.textContent = `${son.label} · score ${Math.round(son.score * 100)} %`;
+    return ligne;
+  }));
+  remplir("#audio-top", mesure.top_sons);
+  $("#audio-hors-parole").textContent = mesure.audio_statut === "ok"
+    ? mesure.son_hors_parole
+      ? `Autre son possible : ${mesure.son_hors_parole} · score ${Math.round(mesure.score_hors_parole * 100)} %`
+      : "Aucun autre son identifié avec assez de certitude"
+    : "Autres sons : en attente d'une analyse audio";
+  remplir("#audio-top-hors-parole", mesure.top_sons_hors_parole);
+  for (const nom of ["pleurs", "aboiement", "miaulement"]) {
+    const score = mesure[`${nom}_score`];
+    $(`#audio-${nom}`).value = score ?? 0;
+    $(`#audio-${nom}-val`).textContent = score == null ? "—" : `${Math.round(score * 100)} %`;
+  }
+}
+
 async function rafraichirEtat() {
   try {
     const e = await (await fetch("/api/etat")).json();
@@ -70,10 +106,17 @@ async function rafraichirEtat() {
     } else {
       pill($("#st-th"), th.ok ? "ok" : "ko", th.ok ? "Thermique" : "Thermique hors ligne");
       $("#dot-thermal").className = "dot " + (th.ok ? "ok" : "ko");
-      $("#th-mode").textContent = th.ok ? th.mode : "—";
+      $("#th-mode").textContent = th.ok ? `${th.mode} · ${th.methode}` : "—";
+      $("#th-res").textContent = th.resolution ?? "—";
       $("#th-px").textContent = th.pixels_chauds ?? "—";
+      $("#th-ecart").textContent = th.ecart_max == null ? "n/d" : `${th.ecart_max} ${th.unite} (seuil ${th.seuil})`;
       $("#th-tmax").textContent = th.tmax == null ? "n/d" : th.tmax + " °C";
     }
+    const au = e.audio;
+    const audioOk = au.mesure.audio_statut === "ok";
+    pill($("#st-audio"), !au.active ? "" : au.erreur ? "ko" : audioOk ? "ok" : "wait",
+      !au.active ? "Micro désactivé" : au.erreur ? "Micro en erreur" : audioOk ? "Micro en écoute" : "Chargement audio…");
+    afficherAudio(au);
     $("#btn-lancer").dataset.pret = e.modele.pret ? "1" : "";
   } catch { /* serveur arrêté */ }
 }
@@ -216,9 +259,12 @@ function afficherResultat(e) {
       <dt>RGB</dt><dd>${e.vivant_rgb ? `<span class="yes">vivant</span> (${esc(e.classes_vivant)})` : '<span class="no">rien de vivant</span>'}</dd>
       <dt>Thermique</dt><dd>${th == null ? '<span class="no">non utilisée</span>' : th ? `<span class="yes">chaud</span> · ${e.pixels_chauds} px${e.tmax ? " · " + e.tmax + " °C" : ""}` : `<span class="no">rien</span> · ${e.pixels_chauds} px`}</dd>
       <dt>Objets</dt><dd>${esc(e.objets) || '<span class="no">aucun</span>'}${detailDetections(e.detections)}</dd>
+      <dt>Micro</dt><dd>${e.audio_statut === "ok" ? esc(e.sons_audio || "aucun son ciblé") : esc(e.erreur_audio || e.audio_statut || "non mesuré")}</dd>
+      <dt>Alerte</dt><dd>${esc(e.alerte || "aucune")}</dd>
       <dt>Référence</dt><dd>${e.reference_utilisee
         ? `${e.zones_nouvelles || 0} zone${e.zones_nouvelles > 1 ? "s" : ""} nouvelle${e.zones_nouvelles > 1 ? "s" : ""}${e.lumiere_changee ? ' · <span class="ref-warn">lumière changée, zones ignorées</span>' : ""}`
         : '<span class="no">non utilisée</span>'}</dd>
+      <dt>Lumière</dt><dd>${lumiere(e)}</dd>
       <dt>Évaluation</dt><dd>A1 ${tag(e.A1)} &nbsp; A2 ${tag(e.A2)}</dd>
       <dt>Latence</dt><dd>${e.latence_s} s</dd>
     </dl>
@@ -226,6 +272,15 @@ function afficherResultat(e) {
       <img src="/images/${e.id}_rgb.jpg" onerror="this.remove()" alt="RGB annoté">
       ${th == null ? "" : `<img src="/images/${e.id}_th.jpg" onerror="this.remove()" alt="Thermique">`}
     </div>`;
+}
+
+// Luminosité de la caméra la plus sombre, et caméras qui ne voient plus rien.
+function lumiere(e) {
+  if (e.luminosite == null || e.luminosite === "") return '<span class="no">n/d</span>';
+  const v = Number(e.luminosite);
+  const niveau = v >= 55 ? "jour" : v >= 20 ? "sombre, images moyennées et éclaircies" : "noir";
+  const aveugles = (Array.isArray(e.cameras_aveugles) ? e.cameras_aveugles.join(", ") : e.cameras_aveugles) || "";
+  return `${v} / 255 · ${niveau}${aveugles ? ` · <span class="ref-warn">caméras aveugles : ${esc(aveugles)}</span>` : ""}`;
 }
 
 // Détail par caméra de ce qui a été retenu : libellé, confiance du classifieur, caméra.
@@ -327,7 +382,7 @@ function afficherGraphique(rows) {
 function afficherTable() {
   $("#nb-essais").textContent = `${ESSAIS.length} essai${ESSAIS.length > 1 ? "s" : ""}`;
   const tb = $("#table tbody");
-  if (!ESSAIS.length) { tb.innerHTML = `<tr><td colspan="13" class="muted">Aucun essai enregistré.</td></tr>`; return; }
+  if (!ESSAIS.length) { tb.innerHTML = `<tr><td colspan="14" class="muted">Aucun essai enregistré.</td></tr>`; return; }
   tb.innerHTML = ESSAIS.map((e) => `<tr>
     <td>${esc(e.horodatage.slice(11, 19))}<div class="muted small">${esc(e.horodatage.slice(0, 10))}</div></td>
     <td><b>${esc(e.scenario)}</b></td>
@@ -337,6 +392,7 @@ function afficherTable() {
     <td>${e.vivant_thermique == null ? '<span class="no">n/a</span>' : e.vivant_thermique ? '<span class="yes">chaud</span>' : '<span class="no">—</span>'}</td>
     <td>${tag(e.A1)}</td><td>${tag(e.A2)}</td>
     <td>${esc(e.objets) || '<span class="no">—</span>'}</td>
+    <td>${e.audio_statut === "ok" ? esc(e.sons_audio || "—") : "—"}</td>
     <td class="num">${e.reference_utilisee ? esc(e.zones_nouvelles || 0) : '<span class="no">n/a</span>'}</td>
     <td class="num">${esc(e.latence_s)} s</td>
     <td><img class="mini" src="/images/${e.id}_rgb.jpg" onerror="this.remove()" alt=""><img class="mini" src="/images/${e.id}_th.jpg" onerror="this.remove()" alt=""></td>

@@ -38,6 +38,24 @@ def test_thermique_seule_suffit_fusion_ou():
     assert a.niveau == "critique" and "source de chaleur" in a.elements
 
 
+@pytest.mark.parametrize("son,element", [
+    ("pleurs", "pleurs de bébé"),
+    ("aboiement", "aboiement"),
+    ("miaulement", "miaulement"),
+])
+def test_audio_seul_declenche_alerte_apres_sortie(son, element):
+    a = d({"classes_vivant": [], "objets": [], "audio_statut": "ok", "sons_audio": [son]})
+    assert a.niveau == "critique" and element in a.elements
+
+
+def test_audio_non_pret_ou_adulte_a_bord_ne_declenche_pas_alerte():
+    r = {"classes_vivant": [], "objets": [], "audio_statut": "attente", "sons_audio": ["pleurs"]}
+    assert d(r) is None
+    r["audio_statut"] = "ok"
+    r["classes_vivant"] = ["personne"]
+    assert d(r, vide=False) is None
+
+
 def test_critique_prioritaire_sur_objet():
     a = d({"classes_vivant": ["bébé"], "objets": ["téléphone"]})
     assert a.niveau == "critique"

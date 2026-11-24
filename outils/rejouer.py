@@ -32,12 +32,9 @@ VERITE_DEFAUT = RACINE / "tests" / "donnees" / "verite_voiture_20261106.json"
 
 
 def charger_config(chemin: Path) -> dict:
-    cfg = json.loads(chemin.read_text(encoding="utf-8"))
-    local = chemin.with_name("config.local.json")
-    if local.exists():
-        for k, v in json.loads(local.read_text(encoding="utf-8")).items():
-            cfg[k] = {**cfg.get(k, {}), **v} if isinstance(v, dict) else v
-    return cfg
+    """config.json + config.local.json, comme le dashboard."""
+    from care.config import charger_config as charger
+    return charger(str(chemin.parent))
 
 
 def charger_detecteur(cfg: dict, moteur: str | None):
@@ -128,7 +125,7 @@ def main(argv=None) -> int:
     reference = None
     if a.reference:
         from care.reference import Reference
-        reference = Reference(str(a.reference), cfg.get("reference"))
+        reference = Reference(str(a.reference), cfg.get("reference"), cfg.get("lumiere"))
     for moteur in a.moteurs:
         d = charger_detecteur(cfg, moteur)
         sortie = a.annoter / d.moteur if a.annoter else None

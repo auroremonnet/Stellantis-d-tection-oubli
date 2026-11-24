@@ -28,7 +28,7 @@ INCONNU = "objet non identifié"
 # Accord grammatical des libellés français (pour des messages lisibles sur le téléphone)
 FEMININS = frozenset({"valise", "carte bancaire", "tablette", "montre", "clés", "clés de voiture",
                       "lunettes", "carte", "personne", "présence humaine", "source de chaleur"})
-PLURIELS = frozenset({"clés", "clés de voiture", "lunettes"})
+PLURIELS = frozenset({"clés", "clés de voiture", "lunettes", "pleurs de bébé"})
 
 
 @dataclass(frozen=True)
@@ -89,6 +89,13 @@ def decider(resultat: dict, *, habitacle_vide_attendu: bool,
         a_proteger.append(PRESENCE_HUMAINE)
     if resultat.get("vivant_thermique"):
         a_proteger.append("source de chaleur")
+    if resultat.get("audio_statut") == "ok":
+        sons = _liste_champ(resultat, "sons_audio")
+        for son, presence in (("pleurs", "pleurs de bébé"),
+                              ("aboiement", "aboiement"),
+                              ("miaulement", "miaulement")):
+            if son in sons:
+                a_proteger.append(presence)
     if a_proteger:
         a_proteger = list(dict.fromkeys(a_proteger))  # sans doublon, ordre conservé
         return Alerte(
