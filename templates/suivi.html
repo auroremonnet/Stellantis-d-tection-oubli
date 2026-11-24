@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#15172b">
+  <title>CARE · Suivi</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="page-suivi">
+
+<header class="suivi-tete">
+  <div class="logo">C</div>
+  <div class="suivi-tete-txt">
+    <h1>CARE · Suivi</h1>
+    <p id="suivi-contexte">Connexion au banc…</p>
+  </div>
+  <span class="pill pill-demo" id="suivi-demo" hidden>DÉMO</span>
+</header>
+
+<main class="suivi-main">
+
+  <!-- État courant, en grand : c'est ce qu'on lit d'un coup d'œil sur le téléphone -->
+  <section class="suivi-etat" id="suivi-etat" data-etat="">
+    <p class="suivi-libelle" id="suivi-libelle">…</p>
+    <p class="suivi-detail" id="suivi-detail"></p>
+    <p class="suivi-chrono" id="suivi-chrono" hidden></p>
+  </section>
+
+  <!-- Dernière alerte + acquittement -->
+  <section class="card suivi-alerte" id="suivi-alerte" hidden>
+    <h2 id="alerte-titre"></h2>
+    <p class="suivi-alerte-msg" id="alerte-message"></p>
+    <p class="muted small" id="alerte-meta"></p>
+    <img id="alerte-image" alt="Image annotée de la dernière analyse" hidden>
+    <button class="btn btn-primary suivi-acquitter" type="button" id="btn-acquitter" hidden>
+      Je m'en occupe
+    </button>
+    <p class="small suivi-retour" id="suivi-retour" hidden></p>
+  </section>
+
+  <!-- Journal persistant (evenements.jsonl), conservé d'un lancement du banc à l'autre -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Derniers événements</h2>
+      <span class="muted small" id="suivi-maj">—</span>
+    </div>
+    <ul class="surv-histo suivi-histo" id="suivi-histo"></ul>
+    <p class="muted small" id="suivi-histo-vide">Aucun événement enregistré pour l'instant.</p>
+  </section>
+
+</main>
+
+<script src="{{ url_for('static', filename='suivi.js') }}"></script>
+</body>
+</html>

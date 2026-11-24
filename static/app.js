@@ -29,6 +29,7 @@ function construireCameras(rgb) {
       <img id="img-${c.id}" alt="${esc(c.label)}">
       <span class="cam-label"><i class="dot" id="dot-${c.id}"></i>${esc(c.label)}</span>
       <span class="cam-off" id="off-${c.id}">Connexion…</span>
+      <span class="cam-warn" id="warn-${c.id}" hidden></span>
     </div>`).join("");
   for (const c of rgb) flux($(`#img-${c.id}`), c.id, (ok) => { $(`#off-${c.id}`).hidden = ok; });
   flux($("#img-thermal"), "thermal", (ok) => { $("#off-thermal").hidden = ok; });
@@ -56,22 +57,18 @@ function afficherAudio(au) {
   $("#audio-general").textContent = mesure.audio_statut === "ok"
     ? mesure.son_general ? `Son probable : ${mesure.son_general}` : "Son non identifié avec assez de certitude"
     : "En attente d'une analyse audio";
-  const top = $("#audio-top");
-  top.replaceChildren(...(mesure.top_sons || []).map((son) => {
+  const remplir = (selecteur, sons) => $(selecteur).replaceChildren(...(sons || []).map((son) => {
     const ligne = document.createElement("li");
     ligne.textContent = `${son.label} · score ${Math.round(son.score * 100)} %`;
     return ligne;
   }));
+  remplir("#audio-top", mesure.top_sons);
   $("#audio-hors-parole").textContent = mesure.audio_statut === "ok"
     ? mesure.son_hors_parole
       ? `Autre son possible : ${mesure.son_hors_parole} · score ${Math.round(mesure.score_hors_parole * 100)} %`
       : "Aucun autre son identifié avec assez de certitude"
     : "Autres sons : en attente d'une analyse audio";
-  $("#audio-top-hors-parole").replaceChildren(...(mesure.top_sons_hors_parole || []).map((son) => {
-    const ligne = document.createElement("li");
-    ligne.textContent = `${son.label} · score ${Math.round(son.score * 100)} %`;
-    return ligne;
-  }));
+  remplir("#audio-top-hors-parole", mesure.top_sons_hors_parole);
   for (const nom of ["pleurs", "aboiement", "miaulement"]) {
     const score = mesure[`${nom}_score`];
     $(`#audio-${nom}`).value = score ?? 0;
@@ -83,15 +80,24 @@ async function rafraichirEtat() {
   try {
     const e = await (await fetch("/api/etat")).json();
     $("#badge-demo").hidden = !e.demo;
-    pill($("#st-modele"), e.modele.pret ? "ok" : e.modele.erreur ? "ko" : "wait",
-      e.modele.pret ? `Modèle ${e.modele.nom}` : e.modele.erreur ? "Modèle en erreur" : "Chargement du modèle…");
+    const moteur = { care: e.modele.custom ? "Localiser + nommer · YOLOE, modèle entraîné, MobileCLIP" : "Localiser + nommer · YOLOE, MobileCLIP",
+      yoloe: "YOLOE (prompts)", coco: "COCO",
+      hybride: e.modele.custom ? "Hybride · YOLOE + modèle entraîné" : "YOLOE (modèle entraîné absent)" }[e.modele.moteur] || e.modele.moteur;
+    pill($("#st-modele"), e.modele.pret ? (e.modele.avertissement ? "wait" : "ok") : e.modele.erreur ? "ko" : "wait",
+      e.modele.pret ? moteur : e.modele.erreur ? "Modèle en erreur" : "Chargement du modèle…");
+    $("#st-modele").title = e.modele.erreur || e.modele.avertissement || e.modele.nom;
     const n = e.rgb.filter((c) => c.ok).length;
     pill($("#st-rgb"), n === e.rgb.length ? "ok" : n ? "wait" : "ko", `Caméras ${n}/${e.rgb.length}`);
+    afficherReference(e.reference, e.demo);
     for (const c of e.rgb) {
       const d = $(`#dot-${c.id}`);
-      if (d) d.className = "dot " + (c.ok ? "ok" : "ko");
+      if (d) d.className = "dot " + (c.ok ? (c.probleme ? "wait" : "ok") : "ko");
+      const tile = $(`#tile-${c.id}`);  // survol : quel périphérique filme cette position
+      if (tile) tile.title = [c.peripherique && `${c.peripherique} (index ${c.index})`, c.probleme].filter(Boolean).join(" — ");
       const off = $(`#off-${c.id}`);
       if (off && !c.ok) off.textContent = c.erreur ? `Hors ligne · ${c.erreur}` : "Hors ligne";
+      const av = $(`#warn-${c.id}`);
+      if (av) { av.hidden = !(c.ok && c.probleme); av.textContent = `⚠ ${c.probleme || ""}`; }
     }
     const th = e.thermique;
     if (!th) {
@@ -113,11 +119,78 @@ async function rafraichirEtat() {
   } catch { /* serveur arrêté */ }
 }
 
+// ---------------------------------------------------------------- référence habitacle vide
+let REF_SIG = null;
+function afficherReference(r, demo) {
+  const etat = $("#ref-etat"), del = $("#btn-ref-del"), btn = $("#btn-ref");
+  if (demo) { etat.textContent = "indisponible en démo"; btn.disabled = true; return; }
+  const sig = JSON.stringify(r);
+  if (sig === REF_SIG) return;
+  REF_SIG = sig;
+  if (!r || !r.active) {
+    etat.innerHTML = '<span class="ref-warn">aucune · objets fixes non filtrés</span>';
+    del.hidden = true;
+    $("#ref-thumbs").innerHTML = "";
+    return;
+  }
+  const fixes = Object.values(r.detections_fixes || {}).reduce((a, b) => a + b, 0);
+  etat.textContent = `${(r.horodatage || "").slice(11, 16)} · ${r.cameras.length} cam · ${fixes} détection${fixes > 1 ? "s" : ""} fixe${fixes > 1 ? "s" : ""} ignorée${fixes > 1 ? "s" : ""}`;
+  del.hidden = false;
+  $("#ref-thumbs").innerHTML = r.cameras.map((sid) => `<figure><img class="mini" src="/reference/${esc(sid)}.jpg?t=${Date.now()}" alt="">
+    <figcaption>${esc(sid)} · ${r.detections_fixes?.[sid] ?? 0} fixe${(r.detections_fixes?.[sid] ?? 0) > 1 ? "s" : ""}</figcaption></figure>`).join("");
+}
+
+$("#btn-ref").onclick = async () => {
+  const btn = $("#btn-ref");
+  btn.disabled = true; btn.textContent = "Capture…";
+  try {
+    const r = await fetch("/api/reference", { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.erreur || "Erreur serveur");
+    REF_SIG = null; afficherReference(d, false);
+  } catch (e) { alerte(e.message); }
+  finally { btn.disabled = false; btn.textContent = "Capturer la référence"; }
+};
+$("#btn-ref-del").onclick = async () => {
+  const d = await (await fetch("/api/reference", { method: "DELETE" })).json();
+  REF_SIG = null; afficherReference(d, false);
+};
+
+// ---------------------------------------------------------------- collecte dataset
+let COL_TIMER = null;
+function afficherCollecte(c) {
+  const enCours = c.en_cours;
+  $("#btn-col").disabled = enCours;
+  $("#btn-col").textContent = enCours ? `Prise ${c.prise}/${c.prises}…` : "Lancer la rafale";
+  $("#btn-col-stop").hidden = !enCours;
+  const bilan = c.prises ? ` · dernière rafale : ${c.gardees} gardée${c.gardees > 1 ? "s" : ""}, ${c.doublons} doublon${c.doublons > 1 ? "s" : ""}` : "";
+  $("#col-etat").textContent = `${c.total_session} image${c.total_session > 1 ? "s" : ""} aujourd'hui${bilan}`;
+  if (c.erreur) alerte(c.erreur);
+  clearTimeout(COL_TIMER);
+  if (enCours) COL_TIMER = setTimeout(suivreCollecte, 700);
+}
+async function suivreCollecte() {
+  try { afficherCollecte(await (await fetch("/api/collecte")).json()); } catch { /* serveur arrêté */ }
+}
+$("#btn-col").onclick = async () => {
+  const corps = { etiquette: $("#col-etiquette").value, variante: $("#col-variante").value,
+    prises: +$("#col-prises").value, intervalle_s: +$("#col-intervalle").value };
+  try {
+    const r = await fetch("/api/collecte", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corps) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.erreur || "Erreur serveur");
+    afficherCollecte(d);
+  } catch (e) { alerte(e.message); }
+};
+$("#btn-col-stop").onclick = async () => afficherCollecte(await (await fetch("/api/collecte", { method: "DELETE" })).json());
+
 // ---------------------------------------------------------------- formulaire
 function construireFormulaire() {
   const sel = $("#f-scenario");
   sel.innerHTML = CONFIG.scenarios.map((s) => `<option value="${esc(s.code)}">${esc(s.code)} · ${esc(s.nom)}</option>`).join("");
   $("#f-variante").innerHTML = CONFIG.variantes.map((v) => `<option>${esc(v)}</option>`).join("");
+  $("#col-variante").innerHTML = $("#f-variante").innerHTML;
   const majVerite = () => {
     const s = CONFIG.scenarios.find((x) => x.code === sel.value);
     choisirVerite(s?.verite);
@@ -183,9 +256,12 @@ function afficherResultat(e) {
       <dt>Scénario</dt><dd>${esc(e.scenario)} · ${esc(e.variante)} · vérité <b>${LABEL_VERITE[e.verite]}</b></dd>
       <dt>RGB</dt><dd>${e.vivant_rgb ? `<span class="yes">vivant</span> (${esc(e.classes_vivant)})` : '<span class="no">rien de vivant</span>'}</dd>
       <dt>Thermique</dt><dd>${th == null ? '<span class="no">non utilisée</span>' : th ? `<span class="yes">chaud</span> · ${e.pixels_chauds} px${e.tmax ? " · " + e.tmax + " °C" : ""}` : `<span class="no">rien</span> · ${e.pixels_chauds} px`}</dd>
-      <dt>Micro</dt><dd>${texteAudio(e)}${e.audio_statut === "ok" ? ` · pleurs ${esc(e.pleurs_score)}, aboiement ${esc(e.aboiement_score)}, miaulement ${esc(e.miaulement_score)}` : e.erreur_audio ? ` · ${esc(e.erreur_audio)}` : ""}</dd>
-      <dt>Nature du son</dt><dd>${e.son_general ? `${esc(e.son_general)} · score ${esc(e.score_general)}` : "non identifiée"}</dd>
-      <dt>Objets</dt><dd>${esc(e.objets) || '<span class="no">aucun</span>'}</dd>
+      <dt>Objets</dt><dd>${esc(e.objets) || '<span class="no">aucun</span>'}${detailDetections(e.detections)}</dd>
+      <dt>Micro</dt><dd>${e.audio_statut === "ok" ? esc(e.sons_audio || "aucun son ciblé") : esc(e.erreur_audio || e.audio_statut || "non mesuré")}</dd>
+      <dt>Alerte</dt><dd>${esc(e.alerte || "aucune")}</dd>
+      <dt>Référence</dt><dd>${e.reference_utilisee
+        ? `${e.zones_nouvelles || 0} zone${e.zones_nouvelles > 1 ? "s" : ""} nouvelle${e.zones_nouvelles > 1 ? "s" : ""}${e.lumiere_changee ? ' · <span class="ref-warn">lumière changée, zones ignorées</span>' : ""}`
+        : '<span class="no">non utilisée</span>'}</dd>
       <dt>Évaluation</dt><dd>A1 ${tag(e.A1)} &nbsp; A2 ${tag(e.A2)}</dd>
       <dt>Latence</dt><dd>${e.latence_s} s</dd>
     </dl>
@@ -195,15 +271,16 @@ function afficherResultat(e) {
     </div>`;
 }
 
-const tag = (r) => (r ? `<span class="tag ${r}">${r}</span>` : '<span class="tag na">—</span>');
-
-function texteAudio(e) {
-  if (e.audio_statut !== "ok") {
-    const etats = { desactive: "désactivé", chargement: "modèle en chargement", attente: "aucune mesure", erreur: "indisponible" };
-    return esc(etats[e.audio_statut] || "non mesuré");
-  }
-  return esc(e.sons_audio || "aucun son ciblé");
+// Détail par caméra de ce qui a été retenu : libellé, confiance du classifieur, caméra.
+function detailDetections(dets) {
+  const valeurs = (dets || []).filter((d) => d.categorie !== "vivant");
+  if (!valeurs.length) return "";
+  return `<ul class="dets">${valeurs.map((d) => `<li><b>${esc(d.libelle)}</b>
+    ${d.confiance == null ? "" : `<span class="conf">${Math.round(100 * d.confiance)} %</span>`}
+    <span class="cam">${esc(d.camera)}</span></li>`).join("")}</ul>`;
 }
+
+const tag = (r) => (r ? `<span class="tag ${r}">${r}</span>` : '<span class="tag na">—</span>');
 
 // ---------------------------------------------------------------- données
 async function chargerEssais() {
@@ -293,7 +370,7 @@ function afficherGraphique(rows) {
 function afficherTable() {
   $("#nb-essais").textContent = `${ESSAIS.length} essai${ESSAIS.length > 1 ? "s" : ""}`;
   const tb = $("#table tbody");
-  if (!ESSAIS.length) { tb.innerHTML = `<tr><td colspan="13" class="muted">Aucun essai enregistré.</td></tr>`; return; }
+  if (!ESSAIS.length) { tb.innerHTML = `<tr><td colspan="14" class="muted">Aucun essai enregistré.</td></tr>`; return; }
   tb.innerHTML = ESSAIS.map((e) => `<tr>
     <td>${esc(e.horodatage.slice(11, 19))}<div class="muted small">${esc(e.horodatage.slice(0, 10))}</div></td>
     <td><b>${esc(e.scenario)}</b></td>
@@ -301,9 +378,10 @@ function afficherTable() {
     <td>${LABEL_VERITE[e.verite] || esc(e.verite)}</td>
     <td>${e.vivant_rgb ? '<span class="yes">vivant</span>' : '<span class="no">—</span>'}</td>
     <td>${e.vivant_thermique == null ? '<span class="no">n/a</span>' : e.vivant_thermique ? '<span class="yes">chaud</span>' : '<span class="no">—</span>'}</td>
-    <td>${texteAudio(e)}${e.son_general ? `<div class="muted small">${esc(e.son_general)}</div>` : ""}</td>
     <td>${tag(e.A1)}</td><td>${tag(e.A2)}</td>
     <td>${esc(e.objets) || '<span class="no">—</span>'}</td>
+    <td>${e.audio_statut === "ok" ? esc(e.sons_audio || "—") : "—"}</td>
+    <td class="num">${e.reference_utilisee ? esc(e.zones_nouvelles || 0) : '<span class="no">n/a</span>'}</td>
     <td class="num">${esc(e.latence_s)} s</td>
     <td><img class="mini" src="/images/${e.id}_rgb.jpg" onerror="this.remove()" alt=""><img class="mini" src="/images/${e.id}_th.jpg" onerror="this.remove()" alt=""></td>
     <td><button class="del" data-id="${esc(e.id)}" title="Supprimer cet essai">×</button></td>
@@ -335,8 +413,10 @@ window.addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(ch
   CONFIG = await (await fetch("/api/config")).json();
   const e = await (await fetch("/api/etat")).json();
   construireCameras(e.rgb);
+  $("#cams-sub").textContent = `${e.rgb.length} caméra${e.rgb.length > 1 ? "s" : ""} RGB · vue plongeante`;
   construireFormulaire();
+  suivreCollecte();
   await rafraichirEtat();
-  setInterval(rafraichirEtat, 1000);
+  setInterval(rafraichirEtat, 2000);
   await chargerEssais();
 })();

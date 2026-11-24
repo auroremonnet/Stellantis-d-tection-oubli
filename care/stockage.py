@@ -1,13 +1,16 @@
-"""Journal des essais (CSV lisible dans Excel) et calcul des métriques."""
+"""Journal des essais (CSV lisible dans Excel), métriques, et relecture du journal
+d'événements de la surveillance (`evenements.jsonl`, une ligne JSON par transition)."""
 import csv
+import json
 import os
 import threading
-import tempfile
 
 COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", "vivant_thermique",
             "classes_vivant", "objets", "cameras_vivant", "pixels_chauds", "tmax", "latence_s",
-             "commentaire", "audio_statut", "sons_audio", "pleurs_score", "aboiement_score",
-             "miaulement_score", "son_general", "score_general", "erreur_audio"]
+            "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee",
+            "mode", "alerte", "latence_alerte_s", "audio_statut", "sons_audio",
+            "pleurs_score", "aboiement_score", "miaulement_score", "son_general",
+            "score_general", "erreur_audio"]
 
 
 def _bool(v):
@@ -23,61 +26,52 @@ class Journal:
             with open(chemin, "w", newline="", encoding="utf-8-sig") as fh:
                 csv.writer(fh, delimiter=";").writerow(COLONNES)
         else:
-            self._migrer_colonnes()
-        with open(self.chemin, newline="", encoding="utf-8-sig") as fh:
-            self.colonnes = next(csv.reader(fh, delimiter=";"))
+            self._migrer()
 
-    def _migrer_colonnes(self):
-        """Ajoute les champs audio aux anciens journaux sans perdre leurs lignes."""
-        with open(self.chemin, newline="", encoding="utf-8-sig") as fh:
-            lecteur = csv.DictReader(fh, delimiter=";")
-            anciennes = lecteur.fieldnames or []
-            if all(c in anciennes for c in COLONNES):
-                return
-            lignes = list(lecteur)
-        colonnes = list(dict.fromkeys(anciennes + COLONNES))
-        fd, temporaire = tempfile.mkstemp(dir=os.path.dirname(self.chemin), suffix=".csv")
-        try:
-            with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as fh:
-                writer = csv.DictWriter(fh, fieldnames=colonnes, delimiter=";")
-                writer.writeheader()
-                writer.writerows(lignes)
-            os.replace(temporaire, self.chemin)
-        finally:
-            if os.path.exists(temporaire):
-                os.remove(temporaire)
+    def _migrer(self):
+        """Ajoute les colonnes manquantes à un CSV écrit par une version précédente."""
+        with open(self.chemin, encoding="utf-8-sig") as fh:
+            r = csv.reader(fh, delimiter=";")
+            entete = next(r, None)
+            lignes = list(r)
+        if entete is None or entete == COLONNES:
+            return
+        with open(self.chemin, "w", newline="", encoding="utf-8-sig") as fh:
+            w = csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";")
+            w.writeheader()
+            for l in lignes:
+                w.writerow({k: v for k, v in zip(entete, l) if k in COLONNES})
 
     def lire(self):
         with self._lock, open(self.chemin, encoding="utf-8-sig") as fh:
             lignes = list(csv.DictReader(fh, delimiter=";"))
         for l in lignes:
+            for k in COLONNES:
+                l.setdefault(k, "")
             l["vivant_rgb"] = _bool(l["vivant_rgb"])
             l["vivant_thermique"] = _bool(l["vivant_thermique"])
+            l["reference_utilisee"] = _bool(l["reference_utilisee"])
+            l["lumiere_changee"] = _bool(l["lumiere_changee"])
             l.update(evaluer(l))
         return lignes
 
     def ajouter(self, ligne):
         with self._lock, open(self.chemin, "a", newline="", encoding="utf-8-sig") as fh:
-            row = {k: ligne.get(k, "") for k in self.colonnes}
-            for k in ("vivant_rgb", "vivant_thermique"):
+            row = {k: ligne.get(k, "") for k in COLONNES}
+            for k in ("vivant_rgb", "vivant_thermique", "reference_utilisee", "lumiere_changee"):
                 row[k] = "" if row[k] in ("", None) else int(bool(row[k]))
             for k in ("classes_vivant", "objets", "cameras_vivant", "sons_audio"):
                 if isinstance(row[k], list):
                     row[k] = ", ".join(row[k])
-            if row["pixels_chauds"] is None:
-                row["pixels_chauds"] = ""
-            if row["tmax"] is None:
-                row["tmax"] = ""
-            if row["score_general"] is None:
-                row["score_general"] = ""
-            csv.DictWriter(fh, fieldnames=self.colonnes, delimiter=";").writerow(row)
+            row = {k: ("" if v is None else v) for k, v in row.items()}
+            csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";").writerow(row)
 
     def supprimer(self, eid):
         with self._lock:
             with open(self.chemin, encoding="utf-8-sig") as fh:
                 lignes = [l for l in csv.DictReader(fh, delimiter=";") if l["id"] != eid]
             with open(self.chemin, "w", newline="", encoding="utf-8-sig") as fh:
-                w = csv.DictWriter(fh, fieldnames=self.colonnes, delimiter=";")
+                w = csv.DictWriter(fh, fieldnames=COLONNES, delimiter=";")
                 w.writeheader()
                 w.writerows(lignes)
 
@@ -134,3 +128,30 @@ def metriques(lignes):
     if obj:
         res["objets"] = _ratio(sum(1 for l in obj if l["objets"]), len(obj))
     return res
+
+
+def derniers_evenements(chemin: str, n: int = 20, taille_max: int = 64 * 1024) -> list[dict]:
+    """Les `n` derniers événements de `evenements.jsonl`, du plus ancien au plus récent.
+
+    Le fichier grossit à chaque cycle et la page de suivi le relit en boucle : on ne lit
+    donc que sa fin (`taille_max`), jamais tout le journal. La première ligne de ce bloc
+    peut être coupée en plein milieu, elle est écartée ; une ligne illisible (écriture
+    interrompue) est ignorée plutôt que de faire échouer toute la lecture."""
+    if n <= 0 or not os.path.exists(chemin):
+        return []
+    with open(chemin, "rb") as fh:
+        fh.seek(0, os.SEEK_END)
+        depuis = max(0, fh.tell() - taille_max)
+        fh.seek(depuis)
+        lignes = fh.read().decode("utf-8", "replace").splitlines()
+    if depuis:
+        lignes = lignes[1:]
+    out = []
+    for ligne in lignes[-n:]:
+        try:
+            evt = json.loads(ligne)
+        except ValueError:
+            continue
+        if isinstance(evt, dict):
+            out.append(evt)
+    return out

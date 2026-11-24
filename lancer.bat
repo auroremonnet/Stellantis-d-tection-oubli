@@ -32,6 +32,8 @@ if not defined DEMO (
     echo Installation de YOLO ^(ultralytics + torch, plusieurs minutes^)...
     "%PY%" -m pip install ultralytics || (echo [ERREUR] installation YOLO & pause & exit /b 1)
   )
+  REM pygrabber : lire le NOM des cameras, pour ecarter la webcam du PC
+  "%PY%" -c "import pygrabber" 2>nul || "%PY%" -m pip install pygrabber
 )
 
 REM ---- 3. Lancement ----

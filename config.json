@@ -1,33 +1,196 @@
 {
   "cameras_rgb": [
-    {"id": "rgb0", "index": 1, "label": "RGB 1"},
-    {"id": "rgb1", "index": 2, "label": "RGB 2"}
+    {
+      "id": "rgb0",
+      "index": "auto",
+      "label": "Avant gauche"
+    },
+    {
+      "id": "rgb1",
+      "index": "auto",
+      "label": "Avant droite"
+    },
+    {
+      "id": "rgb2",
+      "index": "auto",
+      "label": "Arrière gauche"
+    },
+    {
+      "id": "rgb3",
+      "index": "auto",
+      "label": "Arrière droite"
+    }
   ],
-  "camera_thermique": {"id": "thermal", "index": 4, "label": "Thermique (banquette arrière)", "active": false},
-
-  "resolution": [1280, 720],
-  "modele": "yolov8m.pt",
-  "images_par_essai": 10,
+  "camera_thermique": {
+    "id": "thermal",
+    "index": "auto",
+    "label": "Thermique TC001 (banquette arrière)",
+    "active": true
+  },
+  "cameras": {
+    "_aide": "Positions réelles : lancer python lister_cameras.py (écrit config.local.json). index \"auto\" = prochaine caméra libre hors webcam du PC.",
+    "exclure": [
+      "integrated",
+      "intégrée",
+      "built-in",
+      "facetime",
+      "webcam",
+      "ir camera",
+      "windows hello",
+      "virtual",
+      "obs ",
+      "droidcam",
+      "camo",
+      "1080p fhd camera"
+    ],
+    "thermique": [
+      "purethermal",
+      "lepton",
+      "thermal",
+      "flir",
+      "topdon",
+      "tc001",
+      "infiray",
+      "seek"
+    ]
+  },
+  "resolution": [
+    1280,
+    720
+  ],
+  "images_par_essai": 3,
   "repetitions_cible": 10,
-  "confiance_min": 0.4,
   "ratio_presence": 0.5,
-
+  "detection": {
+    "_aide": "moteur « care » : YOLOE et le modèle entraîné localisent, MobileCLIP nomme (care/detection). Moteurs d'avant, pour comparaison : hybride, yoloe, coco. Ajouter un objet : detection.catalogue (voir care/detection/catalogue.py).",
+    "moteur": "care",
+    "modele": "yoloe-11s-seg.pt",
+    "modele_custom": "modeles/care-v1.pt",
+    "imgsz": 640,
+    "confiance_vivant": 0.4,
+    "confiance_custom": 0.35,
+    "regles": {
+      "seuil_objet": 0.6,
+      "seuil_accord": 0.3
+    },
+    "alerte_zone_inconnue": true,
+    "hauteur_min_adulte": 0.35,
+    "imgsz_presence": 480,
+    "historique": {
+      "_aide": "réglages des moteurs hybride / yoloe / coco uniquement",
+      "confiance_objet": 0.25,
+      "zoom_zones": true
+    }
+  },
+  "reference": {
+    "_aide": "comparaison à l'habitacle vide (care/detection/changement.py)",
+    "part_deja_la": 0.15,
+    "seuil_luminance": 24,
+    "seuil_couleur": 13,
+    "zones_max": 8
+  },
   "thermique": {
+    "_aide": "Caméra du banc (UVC Camera, 256x392) : backend msmf + resolution [256, 392], mode relatif (comptes bruts). Vraie TC001 : resolution [256, 384]. Vérifier avec python outils/diag_thermique.py",
+    "modele": "tc001",
+    "backend": "msmf",
+    "resolution": [
+      256,
+      392
+    ],
+    "seuil_comptes": 200,
+    "centile_fond": 10,
     "seuil_celsius": 30.0,
     "seuil_8bit": 200,
     "pixels_chauds_min": 20
   },
   "audio": {"active": true, "index": null, "duree_s": 3, "duree_courte_s": 1.5, "intervalle_s": 1, "maintien_s": 4, "seuil": 0.5, "seuil_general": 0.3, "top_k": 3},
-
   "scenarios": [
-    {"code": "S1", "nom": "Enfant (poupée chauffée) dans siège auto arrière", "verite": "vivant"},
-    {"code": "S2", "nom": "Enfant sous une couverture", "verite": "vivant"},
-    {"code": "S3", "nom": "Animal sur la banquette arrière", "verite": "vivant"},
-    {"code": "S4", "nom": "Animal au sol, derrière siège avant", "verite": "vivant"},
-    {"code": "S5", "nom": "Objet de valeur (sac, ordinateur, téléphone)", "verite": "objet"},
-    {"code": "S6", "nom": "Objet anodin (vêtement, sacoche vide)", "verite": "vide"},
-    {"code": "S7", "nom": "Habitacle vide", "verite": "vide"},
-    {"code": "S8", "nom": "Source chaude inerte (sac au soleil, gourde chaude)", "verite": "vide"}
+    {
+      "code": "S1",
+      "nom": "Enfant (poupée chauffée) dans siège auto arrière",
+      "verite": "vivant"
+    },
+    {
+      "code": "S2",
+      "nom": "Enfant sous une couverture",
+      "verite": "vivant"
+    },
+    {
+      "code": "S3",
+      "nom": "Animal sur la banquette arrière",
+      "verite": "vivant"
+    },
+    {
+      "code": "S4",
+      "nom": "Animal au sol, derrière siège avant",
+      "verite": "vivant"
+    },
+    {
+      "code": "S5",
+      "nom": "Objet de valeur (sac, ordinateur, téléphone)",
+      "verite": "objet"
+    },
+    {
+      "code": "S6",
+      "nom": "Objet anodin (vêtement, sacoche vide)",
+      "verite": "vide"
+    },
+    {
+      "code": "S7",
+      "nom": "Habitacle vide",
+      "verite": "vide"
+    },
+    {
+      "code": "S8",
+      "nom": "Source chaude inerte (sac au soleil, gourde chaude)",
+      "verite": "vide"
+    }
   ],
-  "variantes": ["Jour", "Nuit / faible lumière", "Contre-jour", "Occultation partielle"]
+  "variantes": [
+    "Jour",
+    "Nuit / faible lumière",
+    "Contre-jour",
+    "Occultation partielle"
+  ],
+  "alertes": {
+    "actif": true,
+    "en_demo": false,
+    "topic": "CHANGEMOI-voir-config.local.json",
+    "url_banc": "",
+    "classes_surveillees": [
+      "téléphone",
+      "ordinateur",
+      "tablette",
+      "sac à main",
+      "sac à dos",
+      "sac",
+      "valise",
+      "portefeuille",
+      "clés",
+      "clés de voiture",
+      "carte bancaire",
+      "lunettes",
+      "montre",
+      "casque audio"
+    ],
+    "alerter_objet_inconnu": true,
+    "cooldown_s": 60
+  },
+  "surveillance": {
+    "periode_s": 0.5,
+    "confirmation_presence_s": 1.5,
+    "confirmation_absence_s": 1.0,
+    "delai_sortie_s": 8,
+    "delai_escalade_s": 90,
+    "periode_rappel_s": 60,
+    "duree_rappels_s": 1200,
+    "niveaux_escalade": [
+      "critique"
+    ],
+    "cameras_conducteur": [
+      "rgb0",
+      "rgb1"
+    ]
+  },
+  "sauver_images_brutes": true
 }
