@@ -147,7 +147,9 @@ class DetecteurDemo(Detecteur):
             "zones_nouvelles": 1 if objets else 0, "reference_utilisee": False, "lumiere_changee": False,
             "pixels_chauds": (140 if vivant_th else 3) if thermique is not None else None,
             "tmax": (35.1 if vivant_th else 22.8) if thermique is not None else None,
+            "methode_thermique": "", "resolution_thermique": "",
             "latence_s": round(time.time() - t0, 2),
             "images_rgb": images,
             "image_thermique": thermique.apercu() if thermique is not None else None,
+            "image_thermique_brute": None,
         }

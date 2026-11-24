@@ -10,7 +10,7 @@ COLONNES = ["id", "horodatage", "scenario", "variante", "verite", "vivant_rgb", 
             "commentaire", "moteur", "zones_nouvelles", "reference_utilisee", "lumiere_changee",
             "mode", "alerte", "latence_alerte_s", "audio_statut", "sons_audio",
             "pleurs_score", "aboiement_score", "miaulement_score", "son_general",
-            "score_general", "erreur_audio"]
+            "score_general", "erreur_audio", "methode_thermique", "resolution_thermique"]
 
 
 def _bool(v):

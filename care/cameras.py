@@ -12,7 +12,10 @@ import time
 import cv2
 import numpy as np
 
-from care import peripheriques
+from care import peripheriques, thermique
+
+# réexportés : les outils et les tests les importaient d'ici avant care/thermique.py
+from care.thermique import fond_uniforme, masque_vivant, masque_zones, temperature_plausible, temperatures  # noqa: F401
 
 BACKEND = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
 
@@ -180,22 +183,63 @@ def est_tc001(f):
     return a.dtype == np.uint8 and a.size in [TC001_L * h * c for h in _HAUTEURS for c in (2, 3)]
 
 
+# ---- Caméras thermiques à flux 16 bits simple (Lepton/PureThermal et autres) ----------
+BACKENDS = {"defaut": BACKEND, "dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2,
+            "auto": cv2.CAP_ANY}
+FLUX_DEFAUT = {"backend": "defaut", "fourcc": "Y16 ", "convert_rgb": 0}
+
+
+def ouvrir_flux(index, flux):
+    """Ouvre une caméra dans un mode de lecture donné (outils/diagnostic_thermique.py les essaie tous)."""
+    cap = cv2.VideoCapture(index, BACKENDS[flux.get("backend", "defaut")])
+    if flux.get("fourcc"):
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*flux["fourcc"]))
+    cap.set(cv2.CAP_PROP_CONVERT_RGB, flux.get("convert_rgb", 0))
+    return cap
+
+
+def normaliser_brut(f, largeur=0, hauteur=0):
+    """Selon le pilote, le 16 bits arrive tel quel, en 2 canaux de 8 bits ou en tampon à plat.
+    Certaines caméras empilent deux images (256x384) : l'image visible, puis les températures."""
+    if f.dtype == np.uint8 and f.ndim == 3 and f.shape[2] == 2:
+        f = f[..., 0].astype(np.uint16) | (f[..., 1].astype(np.uint16) << 8)
+    elif f.ndim == 2 and 1 in f.shape and largeur and hauteur:
+        if f.dtype == np.uint8 and f.size == 2 * largeur * hauteur:
+            f = np.frombuffer(f.tobytes(), dtype="<u2").reshape(hauteur, largeur).copy()
+        elif f.dtype == np.uint16 and f.size == largeur * hauteur:
+            f = f.reshape(hauteur, largeur)
+    if f.dtype == np.uint16 and f.ndim == 2 and f.shape[0] * 2 == f.shape[1] * 3:
+        return f[f.shape[0] // 2:]  # format 2:3 : deux images 4:3 empilées, les températures en bas
+    return f
+
+
 class SourceThermique(Source):
-    """Caméra thermique. Gère la Topdon TC001 (radiométrique, 256x192) et la Lepton 80x60
-    (PureThermal, Y16). `thermique.modele` dans config.json : "auto" (défaut), "tc001", "lepton"."""
+    """Caméra thermique : décode le flux, puis délègue l'analyse à care/thermique.py.
+
+    Matériel géré (`thermique.modele` : "auto", "tc001", "lepton") :
+      - famille InfiRay 256x192 : Topdon TC001 (températures) et caméra du banc (comptes bruts) ;
+      - flux 16 bits simple, à la résolution fournie : Lepton/PureThermal, format TLinear ;
+      - flux 8 bits : pas de température, seuil fixe sur l'image (peu fiable).
+    """
 
     def __init__(self, sid, index, label, params, peripherique="", probleme=""):
         super().__init__(sid, index, label, (160, 120), peripherique, probleme)
-        self.params = params
-        self.modele = params.get("modele", "auto")
+        self.params = {**thermique.DEFAUTS, **params}
+        self.modele = self.params.get("modele", "auto")
         self.mode = "?"
+        self.methode = "?"
+        self.reference = None        # champ de l'habitacle vide, posé par care.reference
+        self.unite_reference = None
 
+    # ---- lecture du flux -------------------------------------------------
     def _ouvrir(self):
+        flux = self.params.get("flux")
+        if flux and "backend" not in self.params:    # réglage trouvé par diagnostic_thermique.py sonder
+            return ouvrir_flux(self.index, {**FLUX_DEFAUT, **flux})
         nom_backend = self.params.get("backend", "")
         if nom_backend == "msmf" and os.name != "nt":
             nom_backend = ""
-        backend = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2}.get(
-            nom_backend, BACKEND)
+        backend = BACKENDS.get(nom_backend, BACKEND)
         index = self.index
         if nom_backend == "msmf" and isinstance(index, int):
             # self.index est l'index DirectShow (lister_cameras.py, config) ; MSMF numérote
@@ -213,58 +257,113 @@ class SourceThermique(Source):
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res[1])
         return cap
 
-    @staticmethod
-    def _echelle(temp):
-        # échelle fixe 15-40 °C : un habitacle vide reste sombre au lieu d'amplifier le bruit
-        return np.clip((temp - 15) * (255 / 25), 0, 255).astype(np.uint8)
+    def _lire(self, cap):
+        ok, f = cap.read()
+        if ok and f is not None and not self._infiray(f):
+            f = normaliser_brut(f, int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        return ok, f
 
-    def masque_chaud(self, f):
-        """Retourne (masque des pixels chauds, image 8 bits, température max ou None)."""
-        p = self.params
-        if self.modele in ("auto", "tc001") and est_tc001(f):
+    def _infiray(self, f):
+        return self.modele in ("auto", "tc001") and est_tc001(f)
+
+    def poser_reference(self, champ, unite=thermique.CELSIUS):
+        """Champ de l'habitacle vide auquel comparer (méthode « reference ») ; None pour l'oublier."""
+        self.reference = champ
+        self.unite_reference = unite if champ is not None else None
+
+    # ---- décodage : trame → champ ---------------------------------------------
+    def vers_celsius(self, f):
+        return thermique.temperatures(f, self.params["diviseur_kelvin"])
+
+    def champ(self, f):
+        """Trame → (champ 2D float32, unité), ou (None, None) si la trame ne porte aucune
+        mesure exploitable (8 bits, flux converti en couleur, format inconnu). Met à jour `mode`."""
+        if self._infiray(f):
             d = decoder_trame(f)
             if d is None:
                 # converti en couleur par le pilote : il ne reste qu'une image à gain automatique,
                 # dont les pixels les plus clairs sont toujours « chauds » → aucune alerte plutôt
                 # qu'une alerte permanente. Remède : thermique.backend = "msmf".
                 self.mode = "8 bits (flux converti, températures perdues : pas de détection)"
-                g = image_visible(f)
-                return np.zeros(g.shape, bool), g, None
-            brut, _ = d
-            temp = brut_en_celsius(brut)
+                return None, None
+            temp = brut_en_celsius(d[0])
             if temp is not None:
                 self.mode = "radiométrique (TC001)"
-                return temp > p["seuil_celsius"], self._echelle(temp), float(temp.max())
-            # comptes bruts non calibrés : chaud = nettement au-dessus du fond de la scène. Le
-            # fond (centile bas) est recalculé à chaque image, ce qui suit la dérive du capteur.
-            seuil = p.get("seuil_comptes", 200)
-            fond = float(np.percentile(brut, p.get("centile_fond", 10)))
-            ecart = brut.astype(np.float32) - fond
+                return temp, thermique.CELSIUS
             self.mode = "relatif (comptes bruts, non calibré)"
-            img = np.clip(ecart * (255 / (2 * seuil)), 0, 255).astype(np.uint8)
-            return ecart > seuil, img, None
+            return d[0].astype(np.float32), thermique.COMPTES
         if self.modele == "tc001":
             # forme inattendue (ex. 644x384, mode par défaut de la caméra du banc) : illisible
             self.mode = f"format {f.shape[1]}x{f.shape[0]} illisible (thermique.resolution ?)"
-            g = (cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 and f.dtype == np.uint8
-                 else np.zeros(f.shape[:2], np.uint8))
-            return np.zeros(g.shape, bool), g, None
-        if f.dtype == np.uint16:
-            self.mode = "radiométrique"
-            temp = f.astype(np.float32) / 100.0 - 273.15  # Lepton, format TLinear (centi-Kelvin)
-            return temp > p["seuil_celsius"], self._echelle(temp), float(temp.max())
+            return None, None
+        if f.dtype == np.uint16 and f.ndim == 2:
+            temp = self.vers_celsius(f)
+            if thermique.temperature_plausible(temp):
+                self.mode = "radiométrique"
+                return temp, thermique.CELSIUS
+            self.mode = "16 bits non calibré"      # échelle inconnue : on ne compare que des écarts
+            return f.astype(np.float32), thermique.COMPTES
         self.mode = "8 bits"
-        g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f
-        return g > p["seuil_8bit"], g, None
+        return None, None
+
+    def _image_sans_mesure(self, f):
+        if self._infiray(f):
+            return image_visible(f)
+        if f.ndim == 3 and f.dtype == np.uint8 and f.shape[2] == 3:
+            return cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+        return f if f.ndim == 2 and f.dtype == np.uint8 else np.zeros(f.shape[:2], np.uint8)
+
+    def _apercu(self, champ, unite):
+        if unite == thermique.CELSIUS:
+            # échelle fixe 15-40 °C : un habitacle vide reste sombre au lieu d'amplifier le bruit
+            return np.clip((champ - 15) * (255 / 25), 0, 255).astype(np.uint8)
+        p = self.params
+        fond = float(np.percentile(champ, p["centile_fond"]))
+        return np.clip((champ - fond) * (255 / (2 * p["delta_comptes"])), 0, 255).astype(np.uint8)
+
+    # ---- analyse --------------------------------------------------------------
+    def analyser(self, f):
+        """Trame → mesure complète (masque des zones chaudes, verdict, de quoi régler les seuils)."""
+        p = self.params
+        champ, unite = self.champ(f)
+        ecart_max = None
+        if champ is None:
+            self.methode = "seuil fixe"        # pas de mesure : aucune comparaison fiable
+            img = self._image_sans_mesure(f)
+            masque = img > p["seuil_8bit"] if self.mode == "8 bits" else np.zeros(img.shape, bool)
+        else:
+            img = self._apercu(champ, unite)
+            ref = self.reference
+            avec_reference = (p["methode"] == "reference" and ref is not None and ref.shape == champ.shape
+                              and self.unite_reference == unite)
+            if p["methode"] == "seuil_fixe":
+                self.methode = "seuil fixe"
+                if unite == thermique.CELSIUS:
+                    masque = champ > p["seuil_celsius"]
+                else:   # chaud = nettement au-dessus du centile bas de la scène, qui suit la dérive du capteur
+                    masque = champ - float(np.percentile(champ, p["centile_fond"])) > p["seuil_comptes"]
+            else:
+                self.methode = "référence" if avec_reference else "contraste"
+                fond = ref if avec_reference else thermique.fond_uniforme(champ, p)
+                masque = thermique.masque_vivant(champ, fond, p, unite)
+                diff, ignore = thermique.ecart_au_fond(champ, fond, p)
+                ecart_max = float(diff[~ignore].max()) if not ignore.all() else None
+        nb = int(masque.sum())
+        # contraste et référence : masque_vivant a déjà écarté les zones trop petites
+        chaud = nb >= p["pixels_chauds_min"] if self.methode == "seuil fixe" else nb > 0
+        return {"pixels_chauds": nb, "chaud": chaud, "masque": masque, "img": img,
+                "tmax": float(champ.max()) if unite == thermique.CELSIUS else None,
+                "mode": self.mode, "methode": self.methode, "unite": unite, "ecart_max": ecart_max,
+                "resolution": f"{masque.shape[1]}x{masque.shape[0]}"}
+
+    def masque_chaud(self, f):
+        """Retourne (masque des pixels chauds, image 8 bits, température max ou None)."""
+        m = self.analyser(f)
+        return m["masque"], m["img"], m["tmax"]
 
     def mesure(self):
         f = self.derniere()
-        if f is None:
-            return None
-        masque, img, tmax = self.masque_chaud(f)
-        return {"pixels_chauds": int(masque.sum()), "tmax": tmax, "mode": self.mode,
-                "chaud": int(masque.sum()) >= self.params["pixels_chauds_min"], "img": img,
-                "masque": masque}
+        return None if f is None else self.analyser(f)
 
     def apercu(self):
         m = self.mesure()
@@ -281,7 +380,11 @@ class SourceThermique(Source):
     def etat(self):
         e = super().etat()
         m = self.mesure() if e["ok"] else None
-        e.update({"mode": self.mode,
+        e.update({"mode": self.mode, "methode": self.methode,
+                  "resolution": None if m is None else m["resolution"],
+                  "unite": None if m is None else m["unite"],
+                  "ecart_max": None if m is None or m["ecart_max"] is None else round(m["ecart_max"], 1),
+                  "seuil": self.params["delta_c" if m and m["unite"] == thermique.CELSIUS else "delta_comptes"],
                   "pixels_chauds": None if m is None else m["pixels_chauds"],
                   "tmax": None if m is None or m["tmax"] is None else round(m["tmax"], 1)})
         return e
@@ -327,6 +430,7 @@ class SourceDemo(Source):
 class SourceThermiqueDemo(SourceThermique):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
+        self.modele = "auto"   # flux simulé : 80x60 en 16 bits, quel que soit le modèle de config.json
         self.scene = "vide"
 
     def _ouvrir(self):

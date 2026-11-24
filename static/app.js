@@ -106,8 +106,10 @@ async function rafraichirEtat() {
     } else {
       pill($("#st-th"), th.ok ? "ok" : "ko", th.ok ? "Thermique" : "Thermique hors ligne");
       $("#dot-thermal").className = "dot " + (th.ok ? "ok" : "ko");
-      $("#th-mode").textContent = th.ok ? th.mode : "—";
+      $("#th-mode").textContent = th.ok ? `${th.mode} · ${th.methode}` : "—";
+      $("#th-res").textContent = th.resolution ?? "—";
       $("#th-px").textContent = th.pixels_chauds ?? "—";
+      $("#th-ecart").textContent = th.ecart_max == null ? "n/d" : `${th.ecart_max} ${th.unite} (seuil ${th.seuil})`;
       $("#th-tmax").textContent = th.tmax == null ? "n/d" : th.tmax + " °C";
     }
     const au = e.audio;

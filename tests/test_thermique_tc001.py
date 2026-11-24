@@ -143,3 +143,93 @@ def test_ouverture_msmf_avec_index_converti(monkeypatch):
     assert vus["index"] == 1 and vus["backend"] == cv2.CAP_MSMF
     assert vus["props"][cv2.CAP_PROP_CONVERT_RGB] == 0 and vus["props"][cv2.CAP_PROP_FRAME_HEIGHT] == 392
     assert not SourceThermique("thermal", 7, "banc", p)._ouvrir().isOpened()
+
+
+# --- Caméra du banc + méthode « reference » : comparaison à l'habitacle vide, en comptes bruts ---
+
+def siege_au_soleil(rng):
+    """Habitacle vide mais contrasté, comme relevé sur le banc : un siège 300 comptes au-dessus du reste."""
+    scene = 5050 + rng.normal(0, 8, (192, 256))
+    scene[40:192, 140:256] += 300
+    return scene
+
+
+def source_banc(methode="reference", **params):
+    return SourceThermique("th", 0, "x", {**PARAMS, "modele": "tc001", "methode": methode, **params})
+
+
+def avec_reference(scene_vide, **params):
+    s = source_banc(**params)
+    s.poser_reference(*s.champ(trame_banc(scene_vide)))
+    return s
+
+
+def test_banc_siege_chaud_declenche_sans_reference_mais_pas_avec():
+    """Le contraste seul prend un siège chauffé par le soleil pour un occupant : c'est la raison
+    d'être de la référence (constat fait sur les trames réelles du 06/11)."""
+    rng = np.random.default_rng(3)
+    vide = siege_au_soleil(rng)
+    plus_tard = vide + 60 + rng.normal(0, 8, vide.shape)        # dérive du capteur entre-temps
+    assert source_banc("contraste").analyser(trame_banc(plus_tard))["chaud"]
+    m = avec_reference(vide).analyser(trame_banc(plus_tard))
+    assert not m["chaud"] and m["methode"] == "référence" and m["unite"] == "comptes"
+    assert m["ecart_max"] < 60                                   # la dérive globale est retirée
+
+
+def test_banc_enfant_detecte_par_reference_meme_sur_le_siege_chaud():
+    rng = np.random.default_rng(4)
+    vide = siege_au_soleil(rng)
+    scene = vide + 60 + rng.normal(0, 8, vide.shape)
+    scene[90:130, 170:215] += 320                                # un corps, sur le siège déjà chaud
+    m = avec_reference(vide).analyser(trame_banc(scene))
+    assert m["chaud"] and m["pixels_chauds"] > 1000 and m["ecart_max"] > 250
+    assert m["tmax"] is None                                     # pas de température en comptes bruts
+
+
+def test_banc_petite_tache_chaude_ecartee():
+    """Un point chaud de quelques pixels (voyant, reflet) n'est pas un corps."""
+    rng = np.random.default_rng(5)
+    vide = siege_au_soleil(rng)
+    scene = vide + rng.normal(0, 8, vide.shape)
+    scene[20:26, 20:26] += 600
+    assert not avec_reference(vide).analyser(trame_banc(scene))["chaud"]
+
+
+def test_banc_zone_ignoree_et_seuil_reglable():
+    rng = np.random.default_rng(6)
+    vide = siege_au_soleil(rng)
+    scene = vide + rng.normal(0, 8, vide.shape)
+    scene[0:60, 0:80] += 400                                     # vitre au soleil, en haut à gauche
+    assert avec_reference(vide).analyser(trame_banc(scene))["chaud"]
+    assert not avec_reference(vide, zones_ignorees=[[0, 0, 0.35, 0.35]]).analyser(trame_banc(scene))["chaud"]
+    assert not avec_reference(vide, delta_comptes=500).analyser(trame_banc(scene))["chaud"]
+
+
+def test_reference_d_une_autre_unite_ou_taille_ignoree():
+    """Référence en °C (autre caméra) ou d'une autre taille : on repasse au contraste, sans planter."""
+    rng = np.random.default_rng(7)
+    s = source_banc()
+    s.poser_reference(np.full((192, 256), 22.0, np.float32))     # des °C, pas des comptes
+    assert s.analyser(trame_banc(habitacle_vide(rng)))["methode"] == "contraste"
+    s.poser_reference(np.full((60, 80), 5000.0, np.float32), "comptes")
+    assert s.analyser(trame_banc(habitacle_vide(rng)))["methode"] == "contraste"
+    s.poser_reference(None)
+    assert s.unite_reference is None
+
+
+def test_reference_du_banc_capturee_et_relue(tmp_path):
+    from care.reference import Reference
+    rng = np.random.default_rng(8)
+    s = source_banc()
+    s.frame = trame_banc(siege_au_soleil(rng))
+    ref = Reference(str(tmp_path), None)
+    ref.lier_thermique(s)
+    ref._capturer_thermique(2, pause_s=0)
+    assert s.unite_reference == "comptes" and s.reference.shape == (192, 256) and ref.etat()["thermique"]
+    relue = Reference(str(tmp_path), None)
+    assert relue.unite_thermique == "comptes" and relue.thermique.shape == (192, 256)
+    autre = source_banc()
+    relue.lier_thermique(autre)                                  # au redémarrage, la caméra la retrouve
+    assert autre.unite_reference == "comptes"
+    ref.effacer()
+    assert s.reference is None and Reference(str(tmp_path), None).thermique is None

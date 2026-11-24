@@ -82,6 +82,9 @@ class Thermique:
     def apercu(self):
         return "<image thermique>"
 
+    def derniere(self):
+        return "<trame brute>"
+
 
 def test_thermique_vote_a_part():
     r = analyser(MoteurFactice({}), thermique=Thermique(True))

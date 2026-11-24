@@ -3,13 +3,12 @@
 Le callback audio conserve uniquement quelques secondes en mémoire. Les formes
 d'onde sont écrasées et jamais écrites sur disque.
 """
-from collections import deque
-from math import gcd
 import threading
 import time
+from collections import deque
+from math import gcd
 
 import numpy as np
-
 
 MODEL_ID = "MIT/ast-finetuned-audioset-10-10-0.4593"
 CLASSES_AUDIO = {

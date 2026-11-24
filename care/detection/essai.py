@@ -22,7 +22,7 @@ def analyser_essai(moteur, verrou_inference, rgb, thermique, reference=None, *, 
     n = max(1, int(n_images))
     observations = {s.id: [] for s in rgb}
     derniere = {s.id: None for s in rgb}
-    hits_th, pix_max, tmax = 0, 0, None
+    hits_th, pix_max, tmax, mesure_th = 0, 0, None, None
 
     for _ in range(n):
         ids, frames = [], []
@@ -40,6 +40,7 @@ def analyser_essai(moteur, verrou_inference, rgb, thermique, reference=None, *, 
         if thermique is not None:
             m = thermique.mesure()
             if m is not None:
+                mesure_th = m
                 hits_th += int(m["chaud"])
                 pix_max = max(pix_max, m["pixels_chauds"])
                 if m["tmax"] is not None:
@@ -93,7 +94,10 @@ def analyser_essai(moteur, verrou_inference, rgb, thermique, reference=None, *, 
         "lumiere_changee": lumiere,
         "pixels_chauds": pix_max if thermique is not None else None,
         "tmax": None if tmax is None else round(tmax, 1),
+        "methode_thermique": mesure_th.get("methode", "") if mesure_th else "",
+        "resolution_thermique": mesure_th.get("resolution", "") if mesure_th else "",
         "latence_s": round(time.time() - t0, 2),
         "images_rgb": annotees,
         "image_thermique": thermique.apercu() if thermique is not None else None,
+        "image_thermique_brute": thermique.derniere() if thermique is not None else None,
     }
