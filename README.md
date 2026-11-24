@@ -161,6 +161,17 @@ La comparaison résiste à l'auto-exposition de la caméra et à un léger dépl
 l'image a changé (caméra bougée, nuit tombée), le résultat indique « lumière changée » : la
 référence est à refaire.
 
+### De nuit et en pénombre
+
+Quand une caméra est bruitée (gain monté par manque de lumière), l'essai moyenne des rafales
+d'images avant de les montrer aux modèles, et les éclaircit si elles sont sombres
+(`care/detection/lumiere.py`, réglages `lumiere` de `config.json`). Le résultat indique la
+luminosité de la caméra la plus sombre et les caméras « aveugles » (noir complet). En simulation
+sur les images du 06/11, un téléphone reste retrouvé en pénombre et les habitacles vides restent
+sans alerte ; dans le noir complet, la RGB ne voit rien : il faut le plafonnier, et ce sont la
+thermique et le micro qui détectent une présence. Capturer la référence **dans la même lumière**
+que l'essai (elle est refaite à chaque armement de la surveillance).
+
 ### Régler et étendre
 
 - Ajouter un objet : `detection.catalogue` dans `config.json`, sans toucher au code, par ex.
@@ -226,7 +237,7 @@ script) : l'outil compare des réglages, il ne remplace pas les essais sur le ba
 
 ## Microphone et sons à risque
 
-Installer les dépendances avec `python -m pip install -r requirements-audio.txt`, puis démarrer le banc. Le modèle AST AudioSet est téléchargé au premier lancement. Le microphone de l'ordinateur qui exécute `app.py` est écouté en continu, y compris en mode démo. `python lister_micros.py` permet de choisir son index dans `config.json` ou `config.local.json`. Les sons ne sont pas enregistrés sur disque.
+`lancer.bat` installe les dépendances du micro au premier lancement (à la main : `python -m pip install -r requirements-audio.txt`). Le modèle AST AudioSet est téléchargé au premier démarrage : **le faire une fois avec une connexion internet avant d'aller dans la voiture**, sinon le panneau Micro reste en erreur (le reste du banc fonctionne). L'analyse audio tourne en continu sur le processeur : si les essais ralentissent, augmenter `audio.intervalle_s` ou passer `audio.active` à `false`. Le microphone de l'ordinateur qui exécute `app.py` est écouté en continu, y compris en mode démo. `python lister_micros.py` permet de choisir son index dans `config.json` ou `config.local.json`. Les sons ne sont pas enregistrés sur disque.
 
 Le tableau de bord affiche le niveau du signal, les hypothèses générales et les hypothèses hors parole, ainsi que les scores pleurs, aboiement et miaulement. Les fenêtres de 3 s et 1,5 s alternent pour mieux repérer les sons brefs. Les scores AST ne sont pas des probabilités calibrées : vérifier le seuil `audio.seuil` avec des essais positifs et négatifs dans l'habitacle. Un son masqué par une conversation peut rester indétectable.
 

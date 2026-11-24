@@ -34,6 +34,11 @@ if not defined DEMO (
   )
   REM pygrabber : lire le NOM des cameras, pour ecarter la webcam du PC
   "%PY%" -c "import pygrabber" 2>nul || "%PY%" -m pip install pygrabber
+  REM micro : sans ces paquets le banc demarre quand meme, le panneau Micro reste en erreur
+  "%PY%" -c "import sounddevice, scipy, transformers" 2>nul || (
+    echo Installation des dependances du micro ^(une seule fois, internet requis^)...
+    "%PY%" -m pip install -r requirements-audio.txt || echo [ATTENTION] micro non installe : le banc demarre sans le son.
+  )
 )
 
 REM ---- 3. Lancement ----
