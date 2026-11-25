@@ -281,7 +281,7 @@ function vueResultats() {
   json("/api/resultats").then((r) => {
     const p = r.provenance;
     $("#r-provenance").textContent = r.essais
-      ? `${r.essais} essais du journal, du ${date(p.du)} au ${date(p.au)} · ${p.jour} de jour, ${p.nuit} de nuit · ${p.automatiques} en surveillance automatique, ${p.manuels} lancés à la main.`
+      ? `${r.essais} essais du journal, du ${date(p.du)} au ${date(p.au)} · ${p.jour} de jour, ${p.nuit} de nuit · ${p.automatiques} en surveillance automatique, ${p.manuels} lancés à la main${p.rejoues ? `, ${p.rejoues} rejoués à partir de photos (une caméra, sans thermique)` : ""}.`
       : "Le journal est vide : lancez une série d'essais depuis la vue Essais.";
     $("#r-criteres").innerHTML = r.criteres.map((c) => critere(c, r.objectifs)).join("");
     $("#r-approches").innerHTML = r.approches.map((a, i) => { const t = a.rappel; return `<div class="barre"><span class="barre-nom">${esc(a.nom)}</span>

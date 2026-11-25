@@ -97,3 +97,12 @@ def test_jour_et_nuit_separes_et_echecs_expliques():
     assert e["commentaire"] == "plafonnier éteint"
     assert res["par_scenario"][0]["nuit"]["n"] == 1
     assert analyser(lignes, objectifs={"rappel_objet": 0.4})["criteres"][2]["atteint"] is True
+
+
+def test_essais_rejoues_comptes_a_part():
+    lignes = [essai("vivant", rgb=True, mode="rejeu", audio="desactive"),
+              essai("vivant", rgb=True, th=True, mode="manuel")]
+    p = analyser(lignes)["provenance"]
+    assert (p["rejoues"], p["manuels"], p["automatiques"]) == (1, 1, 0)
+    # un rejeu sans thermique ne compte ni pour ni contre la thermique
+    assert analyser(lignes)["approches"][1]["rappel"]["n"] == 1
