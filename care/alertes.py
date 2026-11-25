@@ -24,9 +24,16 @@ import time
 import cv2
 import requests
 
-# Un topic qui contient ce mot n'a pas été configuré : on refuse d'envoyer (sinon la
-# notification part sur un topic public que n'importe qui peut lire ou alimenter).
+# Un topic qui contient l'un de ces mots n'a pas été configuré : on refuse d'envoyer (sinon la
+# notification, photo de l'habitacle comprise, part sur un topic public que n'importe qui
+# peut lire). « LE-TOPIC » couvre l'exemple des consignes recopié tel quel.
 SENTINELLE_TOPIC = "CHANGEMOI"
+SENTINELLES_TOPIC = (SENTINELLE_TOPIC, "LE-TOPIC", "TOPIC-DE-", "VOTRE-TOPIC")
+
+
+def topic_configure(topic: str) -> bool:
+    t = str(topic or "").strip().upper()
+    return bool(t) and not any(m in t for m in SENTINELLES_TOPIC)
 
 DEFAUTS = {
     "actif": True,
@@ -135,7 +142,7 @@ class Alerteur:
         """Envoi synchrone vers ntfy ; renvoie True si la notification est partie.
         Titre/message/priorité en query params (les headers HTTP cassent les accents) ;
         le bouton d'action et le lien du clic, eux, passent en en-têtes (`Actions`, `Click`)."""
-        if SENTINELLE_TOPIC in self.topic.upper():
+        if not topic_configure(self.topic):
             self.derniere_erreur = (
                 f"topic ntfy non configuré ({self.topic!r}) : définir \"alertes\": "
                 '{"topic": "..."} dans config.local.json (hors dépôt) ou la variable '
@@ -168,4 +175,5 @@ class Alerteur:
 
     def etat(self) -> dict:
         return {"actif": self.actif, "topic": self.topic, "envois": self.envois,
+                "configure": topic_configure(self.topic),
                 "erreur": self.derniere_erreur, "suivi": self.lien_suivi}

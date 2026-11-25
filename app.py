@@ -19,6 +19,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from care import peripheriques
 from care.alertes import Alerteur
+from care.analyse import OBJECTIFS, analyser
 from care.audio import DetecteurAudio
 from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
 from care.collecte import Collecteur
@@ -171,7 +172,29 @@ def _jpeg(img, qualite=70):
 # ---- Pages ---------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", vue="essais")
+
+
+@app.route("/demo")
+def vue_demo():
+    return render_template("demo.html", vue="demo")
+
+
+@app.route("/capteurs")
+def vue_capteurs():
+    return render_template("capteurs.html", vue="capteurs")
+
+
+@app.route("/resultats")
+def vue_resultats():
+    return render_template("resultats.html", vue="resultats")
+
+
+@app.route("/api/resultats")
+def resultats():
+    """Analyse du journal pour la vue Résultats : critères, approches, jour/nuit, échecs."""
+    return jsonify(analyser(JOURNAL.lire(), CFG["scenarios"], CFG.get("repetitions_cible", 10),
+                            CFG.get("objectifs")))
 
 
 @app.route("/suivi")
@@ -252,6 +275,18 @@ def etat():
 def config():
     out = {k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")}
     out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele, **DETECTEUR.vocabulaire}
+    # réglages montrés dans la vue Capteurs (jamais les secrets : pas la section « alertes »)
+    def choisir(section, cles):
+        return {k: CFG.get(section, {}).get(k) for k in cles if CFG.get(section, {}).get(k) is not None}
+    out["reglages"] = {
+        "detection": CFG.get("detection", {}).get("regles", {}),
+        "lumiere": choisir("lumiere", ("seuil_bruit", "seuil_sombre", "seuil_noir", "rafale")),
+        "thermique": choisir("thermique", ("methode", "delta_comptes", "delta_c", "pixels_chauds_min",
+                                           "temp_max_vivant_c")),
+        "audio": choisir("audio", ("seuil", "seuil_general", "intervalle_s", "duree_s")),
+        "surveillance": choisir("surveillance", ("delai_sortie_s", "delai_escalade_s", "cameras_conducteur")),
+        "objectifs": {**OBJECTIFS, **(CFG.get("objectifs") or {})},
+    }
     return jsonify(out)
 
 

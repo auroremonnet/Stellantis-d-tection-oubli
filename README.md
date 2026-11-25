@@ -9,6 +9,19 @@ Banc de test et dashboard pour comparer **A1 (RGB seul)** et **A2 (RGB + thermiq
 - `lancer_demo.bat` : **mode démo**, sans matériel (flux et détections simulés). Utile pour prendre l'outil en main ou le montrer.
 - En ligne de commande : `python app.py` ou `python app.py --demo`.
 
+## Les quatre vues du dashboard
+
+| Vue | Adresse | Pour qui | Ce qu'elle montre |
+|---|---|---|---|
+| Démo | `/demo` | le jury | le cycle complet en direct : départ du conducteur, analyse, verdict, délai face aux 15 s Euro NCAP, la preuve de chaque capteur et la notification |
+| Capteurs | `/capteurs` | les questions techniques | un onglet par capteur (caméras, thermique, micro) : le direct, la méthode en trois étapes, les réglages et ses résultats propres |
+| Résultats | `/resultats` | la soutenance | chaque critère face à son objectif, l'apport de chaque capteur, jour et nuit, par scénario, et les essais ratés avec leur image |
+| Essais | `/` | l'opérateur | lancer un essai, armer la surveillance, journal et export CSV |
+
+Chaque taux de la vue Résultats est donné avec son effectif et son intervalle de confiance à 95 % (Wilson) : un objectif atteint
+sur trop peu d'essais est marqué « à confirmer ». Les objectifs se règlent dans `config.json` (`"objectifs"`, voir `care/analyse.py`).
+Les chiffres issus d'un rejeu d'images ou d'une simulation sont étiquetés comme tels et séparés des essais en voiture.
+
 ## Brancher le matériel (dans la voiture)
 
 Le dashboard se branche sur les **4 caméras de la voiture**, jamais sur la webcam du PC :

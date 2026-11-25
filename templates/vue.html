@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CARE · {% block titre %}{% endblock %}</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vues.css') }}">
+</head>
+<body data-vue="{{ vue }}">
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">C</div>
+    <div>
+      <h1>CARE · Détection d'oubli dans l'habitacle</h1>
+      <p>Groupe 2 · ECE × Stellantis</p>
+    </div>
+  </div>
+  {% include "_nav.html" %}
+  <div class="status">
+    <span id="badge-demo" class="pill pill-demo" hidden>MODE DÉMO</span>
+    <span id="st-rgb" class="pill"><i></i>Caméras</span>
+    <span id="st-th" class="pill"><i></i>Thermique</span>
+    <span id="st-audio" class="pill"><i></i>Micro</span>
+    <span id="st-notif" class="pill"><i></i>Téléphone</span>
+  </div>
+</header>
+<main>{% block contenu %}{% endblock %}</main>
+<script src="{{ url_for('static', filename='vues.js') }}"></script>
+</body>
+</html>

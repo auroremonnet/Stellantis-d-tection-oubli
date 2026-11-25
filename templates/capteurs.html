@@ -1,0 +1,74 @@
+{% extends "vue.html" %}
+{% block titre %}Capteurs{% endblock %}
+{% block contenu %}
+<div class="onglets" role="tablist">
+  <button role="tab" data-onglet="rgb" class="on">Caméras</button>
+  <button role="tab" data-onglet="thermique">Thermique</button>
+  <button role="tab" data-onglet="micro">Micro</button>
+</div>
+
+<section class="capteur" data-capteur="rgb">
+  <div class="card">
+    <div class="card-head"><h2>Caméras RGB · en direct</h2><span id="c-rgb-etat" class="muted small"></span></div>
+    <div id="c-rgb-vue" class="cam-grid"></div>
+  </div>
+  <div class="capteur-cote">
+    <div class="card">
+      <h2>Ce que font les caméras</h2>
+      <p class="capteur-phrase">Elles trouvent chaque objet de l'habitacle, lui donnent un nom, et ne signalent que ce qui n'était pas là quand le véhicule était vide.</p>
+      <ol class="methode">
+        <li><b>Localiser</b> YOLOE propose toutes les formes présentes, et notre modèle entraîné ajoute bébé, clés, portefeuille et carte.</li>
+        <li><b>Nommer</b> MobileCLIP compare chaque découpe aux objets du catalogue et à « fond de voiture ».</li>
+        <li><b>Trancher</b> un objet est gardé si le classifieur est sûr, ou si deux modèles sont d'accord. Ce qui était déjà dans la référence est écarté.</li>
+      </ol>
+      <dl id="c-rgb-reglages" class="reglages"></dl>
+    </div>
+    <div class="card"><h2>Résultats des caméras</h2><div id="c-rgb-res" class="capteur-res"></div></div>
+  </div>
+</section>
+
+<section class="capteur" data-capteur="thermique" hidden>
+  <div class="card">
+    <div class="card-head"><h2>Caméra thermique · en direct</h2><span id="c-th-etat" class="muted small"></span></div>
+    <div class="thermal grand"><img id="c-th-img" class="thermal-img" alt="Image thermique"><div id="c-th-off" class="cam-off" hidden>Hors ligne</div></div>
+    <dl id="c-th-mesure" class="reglages mesure"></dl>
+  </div>
+  <div class="capteur-cote">
+    <div class="card">
+      <h2>Ce que fait la thermique</h2>
+      <p class="capteur-phrase">Elle compare la chaleur de l'habitacle à celle mesurée à vide : une zone nettement plus chaude, de la taille d'un corps, est une présence.</p>
+      <ol class="methode">
+        <li><b>Mesurer</b> la caméra du banc donne des valeurs brutes, pas des degrés : on raisonne en écart, pas en température.</li>
+        <li><b>Comparer</b> à l'image thermique de l'habitacle vide, prise en même temps que la référence des caméras.</li>
+        <li><b>Décider</b> assez de pixels au-dessus du seuil d'écart donnent une source de chaleur. Un siège encore tiède ne déclenche pas, puisqu'il l'était déjà.</li>
+      </ol>
+      <dl id="c-th-reglages" class="reglages"></dl>
+    </div>
+    <div class="card"><h2>Résultats de la thermique</h2><div id="c-th-res" class="capteur-res"></div></div>
+  </div>
+</section>
+
+<section class="capteur" data-capteur="micro" hidden>
+  <div class="card">
+    <div class="card-head"><h2>Micro · en direct</h2><span id="c-mic-etat" class="muted small"></span></div>
+    <div class="mic-vue grand">
+      <canvas id="c-mic-courbe" width="900" height="180"></canvas>
+      <ul id="c-mic-scores" class="mic-scores"></ul>
+      <p id="c-mic-son" class="preuve-txt"></p>
+    </div>
+  </div>
+  <div class="capteur-cote">
+    <div class="card">
+      <h2>Ce que fait le micro</h2>
+      <p class="capteur-phrase">Il écoute l'habitacle et reconnaît trois sons qui trahissent une présence : pleurs, aboiement, miaulement.</p>
+      <ol class="methode">
+        <li><b>Écouter</b> quelques secondes de son, en continu.</li>
+        <li><b>Classer</b> un modèle entraîné sur AudioSet (AST) donne un score à chaque type de son.</li>
+        <li><b>Décider</b> un score au-dessus du seuil compte comme un signe de vie, même si les caméras ne voient rien.</li>
+      </ol>
+      <dl id="c-mic-reglages" class="reglages"></dl>
+    </div>
+    <div class="card"><h2>Résultats du micro</h2><div id="c-mic-res" class="capteur-res"></div></div>
+  </div>
+</section>
+{% endblock %}

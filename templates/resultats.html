@@ -1,0 +1,54 @@
+{% extends "vue.html" %}
+{% block titre %}Résultats{% endblock %}
+{% block contenu %}
+<section class="card r-tete">
+  <div>
+    <h2 id="r-titre">Résultats</h2>
+    <p id="r-provenance" class="muted">Chargement…</p>
+  </div>
+  <div class="r-tete-actions">
+    <span id="r-origine" class="origine"></span>
+    <a class="btn btn-secondary" href="/api/export">Exporter le journal (CSV)</a>
+  </div>
+</section>
+
+<section id="r-criteres" class="r-criteres"></section>
+
+<section class="r-deux">
+  <div class="card">
+    <div class="card-head"><h2>Ce qu'apporte chaque capteur</h2><span class="muted small">présences vivantes détectées, essais enfant et animal</span></div>
+    <div id="r-approches" class="barres"></div>
+    <p class="small muted">Le trait fin donne l'intervalle de confiance à 95 % : plus il y a d'essais, plus il se resserre.</p>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Jour et nuit</h2><span class="muted small">mêmes critères, séparés par luminosité</span></div>
+    <div class="table-wrap"><table id="r-lumiere" class="r-table"></table></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Par scénario</h2><span id="r-cible" class="muted small"></span></div>
+  <div class="table-wrap"><table id="r-scenarios" class="r-table"></table></div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Les essais ratés</h2><span id="r-nb-echecs" class="muted small"></span></div>
+  <div id="r-echecs" class="echecs"></div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Mesures hors journal</h2><span class="muted small">à ne pas confondre avec les essais en voiture</span></div>
+  <div class="hors-journal">
+    <article>
+      <span class="origine rejeu">Rejeu d'images réelles</span>
+      <p><b>49 objets retrouvés sur 56</b> (88 %), 94 % des signalements justes, aucune fausse alerte sur 9 habitacles vides.</p>
+      <p class="small muted">32 photos prises en voiture le 6 novembre, annotées à la main, rejouées dans le moteur actuel. L'ancien moteur en retrouvait 15 sur 56. À refaire avec <code>python outils/rejouer.py</code>.</p>
+    </article>
+    <article>
+      <span class="origine simule">Simulation</span>
+      <p><b>Faible lumière : 88 % conservés avec le traitement, 9 % sans.</b></p>
+      <p class="small muted">Les mêmes photos assombries et bruitées par calcul. Ce n'est pas une mesure de nuit : seuls les essais « Nuit » du journal en sont une.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}

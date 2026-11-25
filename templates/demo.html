@@ -1,0 +1,78 @@
+{% extends "vue.html" %}
+{% block titre %}Démo{% endblock %}
+{% block contenu %}
+<section class="card demo-cycle">
+  <ol id="d-etapes" class="d-etapes">
+    <li><b>Veille</b><span>véhicule surveillé</span></li>
+    <li><b>Conducteur présent</b><span>rien à faire</span></li>
+    <li><b>Conducteur sorti</b><span>on laisse le temps de revenir</span></li>
+    <li><b>Analyse</b><span>caméras, thermique, micro</span></li>
+    <li><b>Décision</b><span>alerte ou rien à signaler</span></li>
+  </ol>
+</section>
+
+<section id="d-verdict" class="card d-verdict">
+  <div class="d-verdict-txt">
+    <p id="d-sur" class="d-sur">Surveillance</p>
+    <h2 id="d-titre">Chargement…</h2>
+    <p id="d-detail" class="d-detail"></p>
+  </div>
+  <div id="d-chrono" class="d-chrono" hidden>
+    <div class="d-chrono-val"><b id="d-delai">—</b><span>s</span></div>
+    <div class="d-jauge"><i id="d-jauge-val"></i><em id="d-jauge-cible"></em></div>
+    <p id="d-chrono-txt" class="small"></p>
+  </div>
+  <div class="d-actions">
+    <button id="d-armer" class="btn btn-primary">Armer la surveillance</button>
+    <button id="d-verrou" class="btn btn-secondary" hidden>Le conducteur verrouille</button>
+    <button id="d-acquitter" class="btn btn-primary" hidden>Je m'en occupe</button>
+    <button id="d-desarmer" class="btn btn-link" hidden>Désarmer</button>
+    <div id="d-simu" class="d-simu" hidden>
+      <span class="small muted">Simulation :</span>
+      <select id="d-oubli" class="d-select" aria-label="Ce que le conducteur oublie">
+        <option value="vivant">oublie un enfant</option>
+        <option value="objet">oublie un objet de valeur</option>
+        <option value="vide">n'oublie rien</option>
+      </select>
+      <button class="btn btn-secondary" data-occupant="1">Le conducteur monte</button>
+      <button class="btn btn-secondary" data-occupant="0">Le conducteur descend</button>
+    </div>
+    <p id="d-erreur" class="d-erreur" hidden></p>
+  </div>
+</section>
+
+<section class="d-preuves">
+  <article id="p-rgb" class="card preuve">
+    <header><h3>Caméras</h3><span class="chip" id="p-rgb-chip">—</span></header>
+    <div id="p-rgb-vue" class="preuve-vue cam-grid"></div>
+    <p id="p-rgb-txt" class="preuve-txt">En attente d'une analyse.</p>
+    <p class="small muted">Localise chaque objet, le nomme, puis ne garde que ce qui n'était pas dans l'habitacle vide.</p>
+  </article>
+  <article id="p-th" class="card preuve">
+    <header><h3>Thermique</h3><span class="chip" id="p-th-chip">—</span></header>
+    <div class="preuve-vue thermal"><img id="p-th-img" class="thermal-img" alt="Image thermique"><div id="p-th-off" class="cam-off" hidden>Hors ligne</div></div>
+    <p id="p-th-txt" class="preuve-txt">En attente d'une analyse.</p>
+    <p class="small muted">Cherche une source de chaleur apparue depuis l'habitacle vide : voit sous une couverture et dans le noir.</p>
+  </article>
+  <article id="p-mic" class="card preuve">
+    <header><h3>Micro</h3><span class="chip" id="p-mic-chip">—</span></header>
+    <div class="preuve-vue mic-vue">
+      <div class="mic-niveau"><i id="p-mic-niveau"></i></div>
+      <ul id="p-mic-scores" class="mic-scores"></ul>
+    </div>
+    <p id="p-mic-txt" class="preuve-txt">En attente d'une analyse.</p>
+    <p class="small muted">Reconnaît des pleurs, un aboiement ou un miaulement, même si rien n'est visible.</p>
+  </article>
+  <article id="p-notif" class="card preuve">
+    <header><h3>Téléphone du conducteur</h3><span class="chip" id="p-notif-chip">—</span></header>
+    <div class="preuve-vue tel"><div class="tel-ecran"><div id="p-notif-bulle" class="tel-bulle vide">Aucune notification</div></div></div>
+    <p id="p-notif-txt" class="preuve-txt"></p>
+    <p class="small muted">Notification envoyée par ntfy, avec la photo de l'habitacle et le bouton « Je m'en occupe ».</p>
+  </article>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Journal du cycle</h2><span class="muted small">cible Euro NCAP 2026 : alerte dans les 15 s après le départ du conducteur</span></div>
+  <ul id="d-histo" class="surv-histo"></ul>
+</section>
+{% endblock %}
