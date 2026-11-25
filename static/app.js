@@ -80,6 +80,7 @@ async function rafraichirEtat() {
   try {
     const e = await (await fetch("/api/etat")).json();
     $("#badge-demo").hidden = !e.demo;
+    $("#badge-demo").textContent = e.ideal ? "VERSION IDÉALE · SIMULATION" : "MODE DÉMO";
     const moteur = { care: e.modele.custom ? "Localiser + nommer · YOLOE, modèle entraîné, MobileCLIP" : "Localiser + nommer · YOLOE, MobileCLIP",
       yoloe: "YOLOE (prompts)", coco: "COCO",
       hybride: e.modele.custom ? "Hybride · YOLOE + modèle entraîné" : "YOLOE (modèle entraîné absent)" }[e.modele.moteur] || e.modele.moteur;

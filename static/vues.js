@@ -37,6 +37,7 @@ async function rafraichirEtat() {
   try {
     const e = ETAT = await json("/api/etat");
     $("#badge-demo").hidden = !e.demo;
+    $("#badge-demo").textContent = e.ideal ? "VERSION IDÉALE · SIMULATION" : "MODE DÉMO";
     const n = e.rgb.filter((c) => c.ok).length;
     pill($("#st-rgb"), n === e.rgb.length ? "ok" : n ? "wait" : "ko", `Caméras ${n}/${e.rgb.length}`);
     pill($("#st-th"), !e.thermique ? "" : e.thermique.ok ? "ok" : "ko", !e.thermique ? "Thermique désactivée" : e.thermique.ok ? "Thermique" : "Thermique hors ligne");
@@ -275,8 +276,8 @@ function vueResultats() {
   ECOUTEURS.push((e) => {
     const o = $("#r-origine");
     o.className = "origine " + (e.demo ? "simule" : "mesure");
-    o.textContent = e.demo ? "Simulation · résultats visés" : "Mesuré en voiture";
-    $("#r-titre").textContent = e.demo ? "Résultats visés en fin de projet (simulés)" : "Résultats mesurés sur le banc";
+    o.textContent = e.ideal ? "Simulation · résultats visés" : e.demo ? "Données de démonstration" : "Mesuré en voiture";
+    $("#r-titre").textContent = e.ideal ? "Résultats visés en fin de projet (simulés)" : e.demo ? "Résultats du mode démo" : "Résultats mesurés sur le banc";
   });
   json("/api/resultats").then((r) => {
     const p = r.provenance;

@@ -22,8 +22,20 @@ Chaque taux de la vue Résultats est donné avec son effectif et son intervalle 
 sur trop peu d'essais est marqué « à confirmer ». Les objectifs se règlent dans `config.json` (`"objectifs"`, voir `care/analyse.py`).
 Les chiffres issus d'un rejeu d'images ou d'une simulation sont étiquetés comme tels et séparés des essais en voiture.
 
-Pour voir le dashboard « plein » avant d'avoir fait toute la campagne : `python outils/peupler_demo.py --vider`, puis
-`lancer_demo.bat`. Les essais sont simulés, rangés dans `data/demo/` et affichés sous « MODE DÉMO » : ce ne sont pas des résultats.
+### Version idéale (simulation)
+
+Pour comparer le dashboard réel à ce que le projet vise :
+
+```
+python outils/peupler_demo.py --ideal --vider --max S3=5 S4=5
+lancer_ideal.bat
+```
+
+Le dashboard s'ouvre sous le bandeau « VERSION IDÉALE · SIMULATION », avec son propre journal (`data/demo-ideal/`),
+séparé des vrais essais (`data/essais/`). Les résultats y sont ceux du système visé, pas des mesures. Les images
+viennent de `data/demo/photos/<scène>/<jeu>/<caméra>.jpg` quand ce dossier existe (vraies photos de l'habitacle,
+marquées « SIMULATION », non versionnées) ; sinon ce sont des scènes de synthèse. Aucun cadre de détection n'est
+dessiné sur une vraie photo. `python outils/peupler_demo.py --vider` remplit de même le mode démo ordinaire.
 
 ## Brancher le matériel (dans la voiture)
 

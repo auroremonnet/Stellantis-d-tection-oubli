@@ -4,6 +4,7 @@ Chaque caméra tourne dans son propre thread et garde en mémoire la dernière
 image reçue : l'interface et l'analyse lisent toujours une image fraîche,
 sans file d'attente qui prend du retard.
 """
+import json
 import math
 import os
 import threading
@@ -394,16 +395,68 @@ class SourceThermique(Source):
 # Mode démo : flux synthétiques pour développer le dashboard sans matériel
 # --------------------------------------------------------------------------
 
+class PhotosDemo:
+    """Photos réelles servant de décor au mode démo : <dossier>/<scène>/<jeu>/<caméra>.jpg.
+
+    Un « jeu » est une prise de vue (une image par caméra, toutes facultatives) ; un fichier jeu.json
+    peut dire ce que la photo contient vraiment : {"vivants": ["bébé"], "objets": ["clés"]}.
+    Sans dossier, le mode démo dessine ses scènes de synthèse."""
+
+    def __init__(self, dossier: str | None):
+        self.dossier = dossier if dossier and os.path.isdir(dossier) else None
+        self._cache: dict[str, np.ndarray | None] = {}
+
+    def jeux(self, scene: str) -> list[str]:
+        d = os.path.join(self.dossier, scene) if self.dossier else ""
+        return sorted(j for j in os.listdir(d) if os.path.isdir(os.path.join(d, j))) if os.path.isdir(d) else []
+
+    def contenu(self, scene: str, jeu: str | None) -> dict:
+        chemin = os.path.join(self.dossier or "", scene, jeu or "", "jeu.json")
+        if not (self.dossier and jeu and os.path.exists(chemin)):
+            return {}
+        with open(chemin, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def image(self, scene: str, jeu: str | None, sid: str):
+        """Photo de cette caméra pour ce jeu ; à défaut celle de l'habitacle vide ; sinon None."""
+        if not self.dossier:
+            return None
+        vides = self.jeux("vide")
+        for sc, j in ((scene, jeu), ("vide", vides[0] if vides else None)):
+            if not j:
+                continue
+            chemin = os.path.join(self.dossier, sc, j, f"{sid}.jpg")
+            if chemin not in self._cache:
+                img = cv2.imread(chemin) if os.path.exists(chemin) else None
+                if img is not None and img.shape[1] > 640:
+                    img = cv2.resize(img, (640, int(640 * img.shape[0] / img.shape[1])))
+                self._cache[chemin] = img
+            if self._cache[chemin] is not None:
+                return self._cache[chemin]
+        return None
+
+
 class SourceDemo(Source):
+    photos = PhotosDemo(None)   # renseigné par l'application : data/demo/photos
+
     def __init__(self, sid, index, label, resolution):
         super().__init__(sid, index, label, resolution)
         self.scene = "vide"  # mis à jour par l'application pendant un essai
+        self.jeu = None      # prise de vue réelle choisie pour cette scène, s'il y en a
 
     def _ouvrir(self):
         return _FauxCap()
 
     def _lire(self, cap):
         time.sleep(1 / 15)
+        photo = self.photos.image(self.scene, self.jeu, self.id)
+        if photo is not None:   # vraie photo de l'habitacle, marquée pour ne pas passer pour un essai
+            img = photo.copy()
+            cv2.putText(img, "SIMULATION", (img.shape[1] - 128, img.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.55, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(img, "SIMULATION", (img.shape[1] - 128, img.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.55, (255, 255, 255), 1, cv2.LINE_AA)
+            return True, img
         t = time.time()
         h, w = 360, 640
         img = np.full((h, w, 3), (52, 46, 42), np.uint8)

@@ -66,16 +66,19 @@ def main(argv=None) -> int:
     ap.add_argument("--vider", action="store_true", help="effacer d'abord le journal de démo")
     ap.add_argument("--max", nargs="*", default=[], metavar="CODE=N",
                     help="plafond d'essais pour un scénario, toutes variantes confondues (ex. S3=5 S4=5)")
+    ap.add_argument("--ideal", action="store_true",
+                    help="version idéale : le système visé en fin de projet (journal data/demo-ideal)")
     ap.add_argument("--port", type=int, default=5177)
     a = ap.parse_args(argv)
 
-    journal = RACINE / "data" / "demo" / "essais.csv"
+    journal = RACINE / "data" / ("demo-ideal" if a.ideal else "demo") / "essais.csv"
     if a.vider and journal.exists():
         journal.unlink()
     base = f"http://127.0.0.1:{a.port}"
     # aucune notification pendant le remplissage, même si alertes.en_demo est activé sur ce PC
     env = {**os.environ, "CARE_NTFY_TOPIC": "CHANGEMOI-remplissage-demo"}
     commande = [sys.executable, str(RACINE / "app.py"), "--demo", "--no-browser", "--port", str(a.port)]
+    commande += ["--ideal"] if a.ideal else []
     serveur = subprocess.Popen(commande, cwd=RACINE, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         attendre(base, lambda: appel(base, "/api/etat")["modele"]["pret"], 120)
@@ -86,9 +89,10 @@ def main(argv=None) -> int:
         for s in cfg["scenarios"]:
             serie = [(s, v) for _ in range(a.repetitions) for v in variantes]   # jour et nuit alternés
             plan += serie[:plafond.get(s["code"], len(serie))]
+        note = "essai simulé (version idéale)" if a.ideal else "essai simulé (mode démo)"
         for fait, (s, v) in enumerate(plan, 1):
             appel(base, "/api/essais", {"scenario": s["code"], "variante": v, "verite": s["verite"],
-                                        "commentaire": "essai simulé (mode démo)"})
+                                        "commentaire": note})
             print(f"\r{fait}/{len(plan)} essais simulés", end="", flush=True)
         print()
         vivants = [s for s in cfg["scenarios"] if s["verite"] == "vivant"] or cfg["scenarios"]
@@ -96,7 +100,8 @@ def main(argv=None) -> int:
             s = vivants[i % len(vivants)]
             cycle_automatique(base, s["verite"], s["code"], variantes[i % len(variantes)])
             print(f"\r{i + 1}/{a.cycles} cycles de surveillance", end="", flush=True)
-        print(f"\nJournal de démo rempli : {journal}\nLancer lancer_demo.bat puis ouvrir /resultats.")
+        lanceur = "lancer_ideal.bat" if a.ideal else "lancer_demo.bat"
+        print(f"\nJournal rempli : {journal}\nLancer {lanceur} puis ouvrir /resultats.")
     finally:
         serveur.terminate()
     return 0

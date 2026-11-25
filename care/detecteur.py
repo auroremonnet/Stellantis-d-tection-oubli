@@ -130,23 +130,33 @@ class DetecteurDemo(Detecteur):
         t0 = time.time()
         time.sleep(1.2)
         r = random.random
-        vivant_rgb = (verite == "vivant" and r() < 0.68) or (verite != "vivant" and r() < 0.06)
-        vivant_th = None
-        if thermique is not None:
-            vivant_th = (verite == "vivant" and r() < 0.9) or (verite != "vivant" and r() < 0.12)
-        objets = ["sac à main"] if verite == "objet" and r() < 0.8 else []
+        ideal = bool(self.cfg.get("demo_ideal"))
+        # ce que la photo de démo contient vraiment, si elle le dit (jeu.json)
+        contenu = next((s.photos.contenu(s.scene, s.jeu) for s in rgb if getattr(s, "jeu", None)), {})
+        photo = any(getattr(s, "jeu", None) for s in rgb)
+        if ideal:   # système visé : les caméras ratent encore quelques présences, la thermique les rattrape
+            vivant_rgb = verite == "vivant" and (thermique is None or r() < 0.85)
+            vivant_th = None if thermique is None else verite == "vivant"
+            objets = list(contenu.get("objets") or ["sac à main"]) if verite == "objet" else []
+        else:
+            vivant_rgb = (verite == "vivant" and r() < 0.68) or (verite != "vivant" and r() < 0.06)
+            vivant_th = None
+            if thermique is not None:
+                vivant_th = (verite == "vivant" and r() < 0.9) or (verite != "vivant" and r() < 0.12)
+            objets = ["sac à main"] if verite == "objet" and r() < 0.8 else []
+        classes = list(contenu.get("vivants") or ["personne"]) if vivant_rgb else []
         images = []
         for s in rgb:
             f = s.derniere()
             if f is not None:
-                if vivant_rgb:
+                if vivant_rgb and not photo:   # pas de cadre inventé sur une vraie photo
                     cv2.rectangle(f, (250, 140), (400, 330), (60, 200, 60), 2)
                     cv2.putText(f, "personne 0.71", (250, 132), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                                 (60, 200, 60), 1, cv2.LINE_AA)
                 images.append(f)
         return {
             "vivant_rgb": vivant_rgb, "vivant_thermique": vivant_th,
-            "classes_vivant": ["personne"] if vivant_rgb else [], "objets": objets,
+            "classes_vivant": classes, "objets": objets,
             "cameras_vivant": [rgb[2].id] if vivant_rgb and len(rgb) > 2 else [],
             "detections": [],
             "zones_nouvelles": 1 if objets else 0, "reference_utilisee": False, "lumiere_changee": False,
