@@ -126,7 +126,8 @@
 .echec a.sans-image { background: var(--line); } .echec a.sans-image img { display: none; }
 .echec img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .echec h4 { margin: 0 0 4px; font-size: 13px; } .echec p { margin: 0 0 2px; font-size: 13px; }
-.hors-journal { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.hors-journal { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.hors-journal code { word-break: break-word; }
 .hors-journal article { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 .hors-journal p { margin: 8px 0 0; }
 

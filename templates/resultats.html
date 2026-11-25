@@ -45,6 +45,11 @@
       <p class="small muted">32 photos prises en voiture le 6 novembre, annotées à la main, rejouées dans le moteur actuel. L'ancien moteur en retrouvait 15 sur 56. À refaire avec <code>python outils/rejouer.py</code>.</p>
     </article>
     <article>
+      <span class="origine rejeu">Rejeu d'images réelles</span>
+      <p><b>Chien réel détecté sur 9 photos sur 10</b>, poupée retrouvée 4 fois sur 4, aucune alerte sur le siège vide.</p>
+      <p class="small muted">11 photos du 1er novembre, un vrai chien et la poupée dans une voiture, prises à la webcam. Le chien est pris pour un chat 4 fois sur 9 : l'alerte part quand même, mais le nom affiché est faux. À refaire avec <code>python outils/rejouer.py --vivants --essais 20261101-16 --verite tests/donnees/verite_chien_20261101.json</code>.</p>
+    </article>
+    <article>
       <span class="origine simule">Simulation</span>
       <p><b>Faible lumière : 88 % conservés avec le traitement, 9 % sans.</b></p>
       <p class="small muted">Les mêmes photos assombries et bruitées par calcul. Ce n'est pas une mesure de nuit : seuls les essais « Nuit » du journal en sont une.</p>
