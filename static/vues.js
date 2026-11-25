@@ -275,8 +275,8 @@ function vueResultats() {
   ECOUTEURS.push((e) => {
     const o = $("#r-origine");
     o.className = "origine " + (e.demo ? "simule" : "mesure");
-    o.textContent = e.demo ? "Données de démonstration" : "Mesuré en voiture";
-    $("#r-titre").textContent = e.demo ? "Résultats du mode démo" : "Résultats mesurés sur le banc";
+    o.textContent = e.demo ? "Simulation · résultats visés" : "Mesuré en voiture";
+    $("#r-titre").textContent = e.demo ? "Résultats visés en fin de projet (simulés)" : "Résultats mesurés sur le banc";
   });
   json("/api/resultats").then((r) => {
     const p = r.provenance;
