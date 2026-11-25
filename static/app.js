@@ -396,7 +396,7 @@ function afficherTable() {
     <td>${e.audio_statut === "ok" ? esc(e.sons_audio || "—") : "—"}</td>
     <td class="num">${e.reference_utilisee ? esc(e.zones_nouvelles || 0) : '<span class="no">n/a</span>'}</td>
     <td class="num">${esc(e.latence_s)} s</td>
-    <td><img class="mini" src="/images/${e.id}_rgb.jpg" onerror="this.remove()" alt=""><img class="mini" src="/images/${e.id}_th.jpg" onerror="this.remove()" alt=""></td>
+    <td><a href="/images/${e.id}_rgb.jpg" target="_blank" rel="noopener" title="Ouvrir les caméras en grand"><img class="mini" src="/images/${e.id}_rgb.jpg" onerror="this.parentNode.remove()" alt="Caméras"></a><a href="/images/${e.id}_th.jpg" target="_blank" rel="noopener" title="Ouvrir la thermique en grand"><img class="mini" src="/images/${e.id}_th.jpg" onerror="this.parentNode.remove()" alt="Thermique"></a></td>
     <td><button class="del" data-id="${esc(e.id)}" title="Supprimer cet essai">×</button></td>
   </tr>`).join("");
 }
