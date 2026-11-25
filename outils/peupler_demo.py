@@ -1,0 +1,103 @@
+"""Remplit le journal du MODE DÉMO avec une série complète d'essais simulés.
+
+    python outils/peupler_demo.py                 # 10 répétitions par scénario, de jour et de nuit
+    python outils/peupler_demo.py --repetitions 3 # plus rapide
+    python outils/peupler_demo.py --vider         # repartir d'un journal de démo vide
+
+Sert à montrer le dashboard « plein », tel qu'il sera une fois toute la campagne faite : tous les
+scénarios, jour et nuit, plus quelques cycles de surveillance automatique pour le délai d'alerte.
+
+Ces essais sont SIMULÉS (flux synthétiques, détections tirées au hasard par DetecteurDemo). Ils vont
+dans data/demo/, jamais dans le journal des vrais essais (data/essais/), et le dashboard les affiche
+sous le bandeau « MODE DÉMO » et l'étiquette « Données de démonstration ». Ce ne sont pas des résultats.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+RACINE = Path(__file__).resolve().parent.parent
+
+
+def appel(base: str, chemin: str, corps: dict | None = None, delai: float = 60):
+    donnees = None if corps is None else json.dumps(corps).encode()
+    req = urllib.request.Request(base + chemin, data=donnees, headers={"Content-Type": "application/json"},
+                                 method="GET" if corps is None else "POST")
+    with urllib.request.urlopen(req, timeout=delai) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def attendre(base: str, pret, delai_s: float, pas_s: float = 0.5):
+    fin = time.time() + delai_s
+    while time.time() < fin:
+        try:
+            v = pret()
+            if v:
+                return v
+        except (urllib.error.URLError, ConnectionError, OSError):
+            pass
+        time.sleep(pas_s)
+    raise TimeoutError("le dashboard de démo ne répond pas")
+
+
+def cycle_automatique(base: str, verite: str, scenario: str, variante: str) -> None:
+    """Un oubli complet : le conducteur monte, descend, le système analyse et décide."""
+    appel(base, "/api/surveillance/armer", {"scenario": scenario, "variante": variante, "verite": verite})
+    appel(base, "/api/surveillance/demo", {"occupant": True})
+    attendre(base, lambda: appel(base, "/api/surveillance")["etat"] == "occupe", 20)
+    appel(base, "/api/surveillance/demo", {"occupant": False})
+    time.sleep(2)
+    attendre(base, lambda: appel(base, "/api/surveillance")["etat"] in ("alerte", "veille"), 60)
+    appel(base, "/api/surveillance/desarmer", {})
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--repetitions", type=int, default=10, help="essais par scénario et par variante")
+    ap.add_argument("--cycles", type=int, default=6, help="cycles de surveillance automatique")
+    ap.add_argument("--vider", action="store_true", help="effacer d'abord le journal de démo")
+    ap.add_argument("--port", type=int, default=5177)
+    a = ap.parse_args(argv)
+
+    journal = RACINE / "data" / "demo" / "essais.csv"
+    if a.vider and journal.exists():
+        journal.unlink()
+    base = f"http://127.0.0.1:{a.port}"
+    # aucune notification pendant le remplissage, même si alertes.en_demo est activé sur ce PC
+    env = {**os.environ, "CARE_NTFY_TOPIC": "CHANGEMOI-remplissage-demo"}
+    commande = [sys.executable, str(RACINE / "app.py"), "--demo", "--no-browser", "--port", str(a.port)]
+    serveur = subprocess.Popen(commande, cwd=RACINE, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        attendre(base, lambda: appel(base, "/api/etat")["modele"]["pret"], 120)
+        cfg = appel(base, "/api/config")
+        variantes = [v for v in cfg["variantes"] if v.lower().startswith(("jour", "nuit"))] or cfg["variantes"][:1]
+        total = len(cfg["scenarios"]) * len(variantes) * a.repetitions
+        fait = 0
+        for s in cfg["scenarios"]:
+            for v in variantes:
+                for _ in range(a.repetitions):
+                    appel(base, "/api/essais", {"scenario": s["code"], "variante": v, "verite": s["verite"],
+                                                "commentaire": "essai simulé (mode démo)"})
+                    fait += 1
+                    print(f"\r{fait}/{total} essais simulés", end="", flush=True)
+        print()
+        vivants = [s for s in cfg["scenarios"] if s["verite"] == "vivant"] or cfg["scenarios"]
+        for i in range(a.cycles):
+            s = vivants[i % len(vivants)]
+            cycle_automatique(base, s["verite"], s["code"], variantes[i % len(variantes)])
+            print(f"\r{i + 1}/{a.cycles} cycles de surveillance", end="", flush=True)
+        print(f"\nJournal de démo rempli : {journal}\nLancer lancer_demo.bat puis ouvrir /resultats.")
+    finally:
+        serveur.terminate()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

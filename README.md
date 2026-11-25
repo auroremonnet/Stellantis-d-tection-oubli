@@ -22,6 +22,9 @@ Chaque taux de la vue Résultats est donné avec son effectif et son intervalle 
 sur trop peu d'essais est marqué « à confirmer ». Les objectifs se règlent dans `config.json` (`"objectifs"`, voir `care/analyse.py`).
 Les chiffres issus d'un rejeu d'images ou d'une simulation sont étiquetés comme tels et séparés des essais en voiture.
 
+Pour voir le dashboard « plein » avant d'avoir fait toute la campagne : `python outils/peupler_demo.py --vider`, puis
+`lancer_demo.bat`. Les essais sont simulés, rangés dans `data/demo/` et affichés sous « MODE DÉMO » : ce ne sont pas des résultats.
+
 ## Brancher le matériel (dans la voiture)
 
 Le dashboard se branche sur les **4 caméras de la voiture**, jamais sur la webcam du PC :
