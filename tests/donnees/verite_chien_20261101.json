@@ -1,0 +1,16 @@
+{
+ "_aide": "Vérité terrain des essais du 01/11/2026 : un vrai chien et la poupée dans une voiture, filmés à la webcam du PC (data/essais/brutes/20261101-16*_rgb0.jpg, non versionnées : une personne y apparaît). [libellé, x, y] = centre en pixels (images 1280x720). '?' = zone ambiguë (bras, main ou veste de l'opératrice, poupée coupée par le bord) : ni raté, ni fausse détection. Annoté à la main ; rejouer avec : python outils/rejouer.py --verite tests/donnees/verite_chien_20261101.json --essais 20261101-16",
+ "images": {
+  "20261101-160446_rgb0": [["chien", 848, 396], ["?", 160, 480]],
+  "20261101-162057_rgb0": [["chien", 416, 408], ["?", 1200, 648]],
+  "20261101-162109_rgb0": [["chien", 384, 384], ["?", 1152, 528]],
+  "20261101-162119_rgb0": [["chien", 368, 360], ["?", 1152, 552]],
+  "20261101-162138_rgb0": [["chien", 320, 336], ["?", 1120, 480]],
+  "20261101-162201_rgb0": [],
+  "20261101-162243_rgb0": [["chien", 368, 384], ["bébé", 1024, 516], ["?", 192, 672]],
+  "20261101-162304_rgb0": [["chien", 496, 312], ["?", 256, 624], ["?", 928, 660]],
+  "20261101-162341_rgb0": [["chien", 512, 360], ["bébé", 1104, 564]],
+  "20261101-162355_rgb0": [["chien", 448, 480], ["bébé", 1120, 600], ["?", 416, 696]],
+  "20261101-162404_rgb0": [["chien", 512, 408], ["bébé", 1056, 600]]
+ }
+}

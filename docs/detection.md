@@ -73,6 +73,28 @@ Essais complets rejoués (4 caméras, 3 images par caméra, référence du 06/11
 
 Durées mesurées sur une machine à 2 cœurs, sans carte graphique.
 
+## Faible lumière (ajout du 24/11)
+
+Simulation de la pénombre sur les mêmes images (exposition à 25 %, bruit de grenaille et de
+lecture) : sans traitement, 5 objets retrouvés sur 56 (9 %) et 2 fausses alertes sur 9 images
+vides. Le bruit est la cause : la moyenne de 6 images de la même scène remonte le rappel à 48 %,
+12 images à 62 %. D'où `care/detection/lumiere.py` : le bruit est mesuré entre deux images
+successives ; au-delà de `lumiere.seuil_bruit`, l'essai moyenne des rafales (toutes les images de
+l'essai sont cumulées), et une image sombre est éclaircie avant d'être montrée aux modèles. La
+référence est capturée et comparée avec le même traitement.
+
+Essais complets simulés, 4 caméras, référence capturée dans la même lumière :
+
+| Lumière simulée | 2 téléphones + clés | Habitacle vide (2 essais) |
+|---|---|---|
+| Jour | clés, téléphone | rien à signaler |
+| Pénombre (exposition 25 %) | téléphone | rien à signaler |
+| Sombre (exposition 8 %) | téléphone (+ étiquette des clés nommée « carte bancaire ») | rien à signaler |
+| Noir (exposition 2 %) | rien : la RGB est aveugle | rien à signaler |
+
+Ce sont des images de jour assombries par calcul, pas de vraies prises de nuit : à confirmer
+dans la voiture. Les petits objets (clés) sont les premiers perdus.
+
 ## Limites connues
 
 - **Peu de données.** 32 images, une seule voiture, de jour. Les réglages n'ont pas été

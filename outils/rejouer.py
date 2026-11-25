@@ -3,6 +3,8 @@
     python outils/rejouer.py                              # moteur de config.json
     python outils/rejouer.py --moteurs care hybride yoloe # comparaison avant / après
     python outils/rejouer.py --annoter rapports/rejeu     # + images annotées pour vérifier à l'œil
+    python outils/rejouer.py --vivants --essais 20261101-16 \
+        --verite tests/donnees/verite_chien_20261101.json  # chien et poupée (essais du 01/11)
 
 Sert à vérifier qu'un réglage ou un nouveau modèle améliore vraiment les choses, sur les
 mêmes images, sans retourner dans la voiture. Les images sont celles que le banc enregistre
@@ -32,12 +34,9 @@ VERITE_DEFAUT = RACINE / "tests" / "donnees" / "verite_voiture_20261106.json"
 
 
 def charger_config(chemin: Path) -> dict:
-    cfg = json.loads(chemin.read_text(encoding="utf-8"))
-    local = chemin.with_name("config.local.json")
-    if local.exists():
-        for k, v in json.loads(local.read_text(encoding="utf-8")).items():
-            cfg[k] = {**cfg.get(k, {}), **v} if isinstance(v, dict) else v
-    return cfg
+    """config.json + config.local.json, comme le dashboard."""
+    from care.config import charger_config as charger
+    return charger(str(chemin.parent))
 
 
 def charger_detecteur(cfg: dict, moteur: str | None):
@@ -53,7 +52,8 @@ def charger_detecteur(cfg: dict, moteur: str | None):
     return d
 
 
-def rejouer(detecteur, images: dict, verite: dict, reference=None, annoter: Path | None = None):
+def rejouer(detecteur, images: dict, verite: dict, reference=None, annoter: Path | None = None,
+            types: tuple[str, ...] = ("valeur",)):
     from care.detection.identification import Detection
     from care.detection.rendu import annoter as dessiner
     total: dict[str, Compteur] = defaultdict(Compteur)
@@ -63,9 +63,9 @@ def rejouer(detecteur, images: dict, verite: dict, reference=None, annoter: Path
         if img is None:
             continue
         t0 = time.perf_counter()
-        dets = [d for d in detecteur.detecter([img])[0] if d["type"] == "valeur"]
+        dets = [d for d in detecteur.detecter([img])[0] if d["type"] in types]
         duree += time.perf_counter() - t0
-        gardees = [Detection(detecteur.libelle(d["nom"]), "valeur", d["conf"], d["boite"]) for d in dets]
+        gardees = [Detection(detecteur.libelle(d["nom"]), d["type"], d["conf"], d["boite"]) for d in dets]
         fixes = []
         cam = nom.rsplit("_", 1)[-1]
         if reference is not None and reference.a(cam):
@@ -114,6 +114,8 @@ def main(argv=None) -> int:
     ap.add_argument("--reference", type=Path, default=None, help="dossier d'une référence (data/essais/reference)")
     ap.add_argument("--essais", nargs="*", help="ne rejouer que ces essais (préfixes de nom de fichier)")
     ap.add_argument("--annoter", type=Path, default=None, help="dossier où écrire les images annotées")
+    ap.add_argument("--vivants", action="store_true",
+                    help="noter aussi les présences vivantes (chien, chat, bébé, personne), pas seulement les objets")
     ap.add_argument("--config", type=Path, default=RACINE / "config.json")
     a = ap.parse_args(argv)
 
@@ -128,11 +130,12 @@ def main(argv=None) -> int:
     reference = None
     if a.reference:
         from care.reference import Reference
-        reference = Reference(str(a.reference), cfg.get("reference"))
+        reference = Reference(str(a.reference), cfg.get("reference"), cfg.get("lumiere"))
     for moteur in a.moteurs:
         d = charger_detecteur(cfg, moteur)
         sortie = a.annoter / d.moteur if a.annoter else None
-        print(tableau(d.moteur, *rejouer(d, images, verite, reference, sortie)))
+        types = ("valeur", "vivant") if a.vivants else ("valeur",)
+        print(tableau(d.moteur, *rejouer(d, images, verite, reference, sortie, types)))
     return 0
 
 

@@ -8,18 +8,23 @@ Puis ouvrir http://localhost:5000
 import argparse
 import json
 import os
+import random
 import time
 import webbrowser
 from datetime import datetime
 from threading import Timer
 
 import cv2
+import numpy as np
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file, send_from_directory
 
 from care import peripheriques
 from care.alertes import Alerteur
-from care.cameras import Source, SourceDemo, SourceThermique, SourceThermiqueDemo
+from care.analyse import OBJECTIFS, analyser
+from care.audio import DetecteurAudio
+from care.cameras import PhotosDemo, Source, SourceDemo, SourceThermique, SourceThermiqueDemo
 from care.collecte import Collecteur
+from care.config import charger_config
 from care.decision import decider
 from care.detecteur import Detecteur, DetecteurDemo, mosaique
 from care.reference import Reference
@@ -30,22 +35,17 @@ RACINE = os.path.dirname(os.path.abspath(__file__))
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--demo", action="store_true", help="flux et détections simulés")
+parser.add_argument("--ideal", action="store_true",
+                    help="avec --demo : simule le système visé en fin de projet (journal data/demo-ideal)")
 parser.add_argument("--port", type=int, default=5000)
 parser.add_argument("--no-browser", action="store_true")
 ARGS = parser.parse_args()
 
-with open(os.path.join(RACINE, "config.json"), encoding="utf-8") as fh:
-    CFG = json.load(fh)
-# Réglages propres au poste, hors dépôt (le dépôt est public) : config.local.json est
-# ignoré par git et fusionné section par section par-dessus config.json.
-_LOCAL = os.path.join(RACINE, "config.local.json")
-if os.path.exists(_LOCAL):
-    with open(_LOCAL, encoding="utf-8") as fh:
-        for _k, _v in json.load(fh).items():
-            CFG[_k] = {**CFG.get(_k, {}), **_v} if isinstance(_v, dict) else _v
+CFG = charger_config(RACINE)
 
 DEMO = ARGS.demo
-DATA = os.path.join(RACINE, "data", "demo" if DEMO else "essais")
+IDEAL = DEMO and ARGS.ideal
+DATA = os.path.join(RACINE, "data", ("demo-ideal" if IDEAL else "demo") if DEMO else "essais")
 IMAGES = os.path.join(DATA, "images")
 BRUTES = os.path.join(DATA, "brutes")      # images sans annotation, pour enrichir le dataset
 os.makedirs(IMAGES, exist_ok=True)
@@ -55,6 +55,8 @@ VERITES = ("vivant", "objet", "vide")
 
 # ---- Matériel ------------------------------------------------------------
 if DEMO:
+    CFG["demo_ideal"] = IDEAL
+    SourceDemo.photos = PhotosDemo(os.path.join(RACINE, "data", "demo", "photos"))   # décor réel, facultatif
     RGB = [SourceDemo(c["id"], i, c["label"], CFG["resolution"]).demarrer()
            for i, c in enumerate(CFG["cameras_rgb"])]
     cth = CFG["camera_thermique"]
@@ -70,8 +72,11 @@ else:
                              _th["peripherique"], _th["probleme"]).demarrer() if _th else None)
 SOURCES = {s.id: s for s in RGB + ([THERM] if THERM else [])}
 DETECTEUR = (DetecteurDemo if DEMO else Detecteur)(CFG)
-REFERENCE = Reference(os.path.join(DATA, "reference"), CFG.get("reference"))
+REFERENCE = Reference(os.path.join(DATA, "reference"), CFG.get("reference"), CFG.get("lumiere"))
+if THERM:
+    REFERENCE.lier_thermique(THERM)   # la thermique se compare, elle aussi, à l'habitacle vide
 COLLECTEUR = Collecteur(os.path.join(DATA, "collecte"), RGB)   # images pour le dataset v2
+AUDIO = DetecteurAudio(CFG.get("audio", {}))
 
 CFG_ALERTES = dict(CFG.get("alertes", {}))
 if os.environ.get("CARE_NTFY_TOPIC"):  # le topic ntfy fait office de mot de passe
@@ -98,6 +103,9 @@ def _enregistrer(r, contexte, mode, brutes=None, niveau_alerte=None):
         os.makedirs(BRUTES, exist_ok=True)
         for sid, f in brutes.items():
             cv2.imwrite(os.path.join(BRUTES, f"{eid}_{sid}.jpg"), f)
+    if r.get("image_thermique_brute") is not None and CFG.get("sauver_images_brutes", True):
+        os.makedirs(BRUTES, exist_ok=True)  # .npy : un JPEG perdrait les températures
+        np.save(os.path.join(BRUTES, f"{eid}_thermal.npy"), r["image_thermique_brute"])
     if contexte.get("verite") not in VERITES or not contexte.get("scenario"):
         return eid, None  # surveillance « libre » : pas de vérité terrain, pas de ligne au journal
     ligne = {k: v for k, v in r.items() if not k.startswith("image")}
@@ -119,6 +127,7 @@ def _journaliser_evenement(evt):
 def _analyser_surveillance(contexte):
     brutes = _capturer_brutes()
     r = DETECTEUR.analyser(RGB, THERM, contexte.get("verite"), reference=None if DEMO else REFERENCE)
+    r.update(AUDIO.instantane())
     r["id"] = datetime.now().strftime("%Y%m%d-%H%M%S")
     r["_brutes"] = brutes
     return r
@@ -131,9 +140,11 @@ def _enregistrer_surveillance(r, contexte):
 
 
 def _demo_scene(scene):
+    jeux = SourceDemo.photos.jeux(scene)
+    jeu = random.choice(jeux) if jeux else None   # une même prise de vue pour toutes les caméras
     for s in SOURCES.values():
         if hasattr(s, "scene"):
-            s.scene = scene
+            s.jeu, s.scene = jeu, scene
 
 
 # Caméras qui voient le conducteur : elles seules décident « adulte à bord / parti ».
@@ -169,7 +180,29 @@ def _jpeg(img, qualite=70):
 # ---- Pages ---------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", vue="essais")
+
+
+@app.route("/demo")
+def vue_demo():
+    return render_template("demo.html", vue="demo")
+
+
+@app.route("/capteurs")
+def vue_capteurs():
+    return render_template("capteurs.html", vue="capteurs")
+
+
+@app.route("/resultats")
+def vue_resultats():
+    return render_template("resultats.html", vue="resultats")
+
+
+@app.route("/api/resultats")
+def resultats():
+    """Analyse du journal pour la vue Résultats : critères, approches, jour/nuit, échecs."""
+    return jsonify(analyser(JOURNAL.lire(), CFG["scenarios"], CFG.get("repetitions_cible", 10),
+                            CFG.get("objectifs")))
 
 
 @app.route("/suivi")
@@ -234,7 +267,7 @@ def image_reference(sid):
 @app.route("/api/etat")
 def etat():
     return jsonify({
-        "demo": DEMO,
+        "demo": DEMO, "ideal": IDEAL,
         "modele": {"pret": DETECTEUR.pret, "nom": DETECTEUR.modele, "moteur": DETECTEUR.moteur,
                    "erreur": DETECTEUR.erreur, "avertissement": DETECTEUR.avertissement,
                    "custom": DETECTEUR.custom is not None},
@@ -242,6 +275,7 @@ def etat():
         "rgb": [s.etat() for s in RGB],
         "thermique": THERM.etat() if THERM else None,
         "reference": REFERENCE.etat(),
+        "audio": AUDIO.etat(),
     })
 
 
@@ -249,6 +283,18 @@ def etat():
 def config():
     out = {k: CFG[k] for k in ("scenarios", "variantes", "images_par_essai", "repetitions_cible")}
     out["detection"] = {"moteur": DETECTEUR.moteur, "modele": DETECTEUR.modele, **DETECTEUR.vocabulaire}
+    # réglages montrés dans la vue Capteurs (jamais les secrets : pas la section « alertes »)
+    def choisir(section, cles):
+        return {k: CFG.get(section, {}).get(k) for k in cles if CFG.get(section, {}).get(k) is not None}
+    out["reglages"] = {
+        "detection": CFG.get("detection", {}).get("regles", {}),
+        "lumiere": choisir("lumiere", ("seuil_bruit", "seuil_sombre", "seuil_noir", "rafale")),
+        "thermique": choisir("thermique", ("methode", "delta_comptes", "delta_c", "pixels_chauds_min",
+                                           "temp_max_vivant_c")),
+        "audio": choisir("audio", ("seuil", "seuil_general", "intervalle_s", "duree_s")),
+        "surveillance": choisir("surveillance", ("delai_sortie_s", "delai_escalade_s", "cameras_conducteur")),
+        "objectifs": {**OBJECTIFS, **(CFG.get("objectifs") or {})},
+    }
     return jsonify(out)
 
 
@@ -318,6 +364,7 @@ def nouvel_essai():
     brutes = _capturer_brutes()
     try:
         r = DETECTEUR.analyser(RGB, THERM, d["verite"], reference=None if DEMO else REFERENCE)
+        r.update(AUDIO.instantane())
     except RuntimeError as e:
         return jsonify({"erreur": str(e)}), 503
     finally:

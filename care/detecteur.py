@@ -20,6 +20,8 @@ import cv2
 from .detection.catalogue import INCONNU
 from .detection.essai import analyser_essai
 from .detection.identification import est_adulte, fusionner
+from .detection.lumiere import Reglages as Lumiere
+from .detection.lumiere import eclaircir
 from .detection.moteurs import LIBELLES, MoteurCare, creer
 from .detection.rendu import mosaique
 
@@ -36,6 +38,7 @@ class Detecteur:
         self.hauteur_adulte = d.get("hauteur_min_adulte", 0.35)
         self.imgsz_presence = d.get("imgsz_presence", 480)  # surveillance : plus petit = plus rapide
         self.alerte_inconnu = d.get("alerte_zone_inconnue", True)
+        self.lumiere = Lumiere.depuis_config(cfg.get("lumiere"))   # traitement de la faible lumière
         self.erreur = ""
         self._pret = False
         self._lock = threading.Lock()            # un essai à la fois
@@ -80,6 +83,7 @@ class Detecteur:
     # ---- services ------------------------------------------------------------
     def detecter(self, frames, facteur_conf=1.0):
         """Pour chaque image : liste de {nom, type, conf, boite, source}."""
+        frames = [eclaircir(f, self.lumiere) for f in frames]
         with self._lock_inference:
             observations = self._moteur.observer(frames, facteur_conf)
             conclusions = [self._moteur.conclure(f, [o]) for f, o in zip(frames, observations)]
@@ -105,7 +109,8 @@ class Detecteur:
             raise RuntimeError("Modèle pas encore chargé" + (f" : {self.erreur}" if self.erreur else ""))
         with self._lock:
             return analyser_essai(self._moteur, self._lock_inference, rgb, thermique, reference,
-                                  n_images=self.cfg["images_par_essai"], alerte_inconnu=self.alerte_inconnu)
+                                  n_images=self.cfg["images_par_essai"], alerte_inconnu=self.alerte_inconnu,
+                                  lumiere=self.lumiere)
 
 
 class DetecteurDemo(Detecteur):
@@ -125,29 +130,42 @@ class DetecteurDemo(Detecteur):
         t0 = time.time()
         time.sleep(1.2)
         r = random.random
-        vivant_rgb = (verite == "vivant" and r() < 0.68) or (verite != "vivant" and r() < 0.06)
-        vivant_th = None
-        if thermique is not None:
-            vivant_th = (verite == "vivant" and r() < 0.9) or (verite != "vivant" and r() < 0.12)
-        objets = ["sac à main"] if verite == "objet" and r() < 0.8 else []
+        ideal = bool(self.cfg.get("demo_ideal"))
+        # ce que la photo de démo contient vraiment, si elle le dit (jeu.json)
+        contenu = next((s.photos.contenu(s.scene, s.jeu) for s in rgb if getattr(s, "jeu", None)), {})
+        photo = any(getattr(s, "jeu", None) for s in rgb)
+        if ideal:   # système visé : les caméras ratent encore quelques présences, la thermique les rattrape
+            vivant_rgb = verite == "vivant" and (thermique is None or r() < 0.85)
+            vivant_th = None if thermique is None else verite == "vivant"
+            objets = list(contenu.get("objets") or ["sac à main"]) if verite == "objet" else []
+        else:
+            vivant_rgb = (verite == "vivant" and r() < 0.68) or (verite != "vivant" and r() < 0.06)
+            vivant_th = None
+            if thermique is not None:
+                vivant_th = (verite == "vivant" and r() < 0.9) or (verite != "vivant" and r() < 0.12)
+            objets = ["sac à main"] if verite == "objet" and r() < 0.8 else []
+        classes = list(contenu.get("vivants") or ["personne"]) if vivant_rgb else []
         images = []
         for s in rgb:
             f = s.derniere()
             if f is not None:
-                if vivant_rgb:
+                if vivant_rgb and not photo:   # pas de cadre inventé sur une vraie photo
                     cv2.rectangle(f, (250, 140), (400, 330), (60, 200, 60), 2)
                     cv2.putText(f, "personne 0.71", (250, 132), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                                 (60, 200, 60), 1, cv2.LINE_AA)
                 images.append(f)
         return {
             "vivant_rgb": vivant_rgb, "vivant_thermique": vivant_th,
-            "classes_vivant": ["personne"] if vivant_rgb else [], "objets": objets,
+            "classes_vivant": classes, "objets": objets,
             "cameras_vivant": [rgb[2].id] if vivant_rgb and len(rgb) > 2 else [],
             "detections": [],
             "zones_nouvelles": 1 if objets else 0, "reference_utilisee": False, "lumiere_changee": False,
+            "luminosite": None, "cameras_aveugles": [],
             "pixels_chauds": (140 if vivant_th else 3) if thermique is not None else None,
             "tmax": (35.1 if vivant_th else 22.8) if thermique is not None else None,
+            "methode_thermique": "", "resolution_thermique": "",
             "latence_s": round(time.time() - t0, 2),
             "images_rgb": images,
             "image_thermique": thermique.apercu() if thermique is not None else None,
+            "image_thermique_brute": None,
         }

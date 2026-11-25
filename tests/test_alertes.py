@@ -195,3 +195,14 @@ def test_etat_expose_le_lien_de_suivi(faux):
     """Le dashboard lit alertes.suivi dans /api/etat pour le bouton « Vue téléphone »."""
     assert Alerteur({"url_banc": "http://banc.lan:5000"}).etat()["suivi"] == "http://banc.lan:5000/suivi"
     assert Alerteur({}).etat()["suivi"] == ""
+
+
+def test_topic_d_exemple_recopie_refuse():
+    """Un topic d'exemple laissé tel quel ne doit rien envoyer (topic public, photo jointe)."""
+    from care.alertes import topic_configure
+    assert not topic_configure("CHANGEMOI-voir-config.local.json")
+    assert not topic_configure("LE-TOPIC-DE-BASILE") and not topic_configure("") and not topic_configure(None)
+    assert topic_configure("care-g2-x7Qp93kd")
+    a = Alerteur({"topic": "LE-TOPIC-DE-BASILE"}, envoi_synchrone=True)
+    assert a.envoyer("t", "m") is False and "non configuré" in a.derniere_erreur
+    assert a.etat()["configure"] is False
