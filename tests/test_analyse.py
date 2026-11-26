@@ -106,3 +106,16 @@ def test_essais_rejoues_comptes_a_part():
     assert (p["rejoues"], p["manuels"], p["automatiques"]) == (1, 1, 0)
     # un rejeu sans thermique ne compte ni pour ni contre la thermique
     assert analyser(lignes)["approches"][1]["rappel"]["n"] == 1
+
+
+def test_modele_de_simulation_par_scenario():
+    from care.simulation import Quotas, lumiere, simuler
+    q = Quotas()
+    assert simuler(q, "S9", "Jour") is None and lumiere("Nuit / faible lumière") == "nuit"
+    s2 = [simuler(q, "S2", "Jour") for _ in range(8)]
+    assert not any(r["vivant_rgb"] for r in s2)                       # enfant caché : les caméras ne voient rien
+    assert all(r["vivant_thermique"] or r["son"] for r in s2)         # thermique ou micro le trouvent
+    assert all(simuler(q, "S3", "Jour")["vivant_thermique"] is None for _ in range(3))   # pas de thermique
+    jour = sum(bool(simuler(q, "S5", "Jour")["objets"]) for _ in range(31))
+    nuit = sum(bool(simuler(q, "S5", "Nuit / faible lumière")["objets"]) for _ in range(6))
+    assert jour == 29 and nuit == 1                                    # proportions exactes, sans hasard

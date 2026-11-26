@@ -126,8 +126,10 @@ def _journaliser_evenement(evt):
 # ---- Surveillance automatique (simulation de l'oubli de bout en bout) ----------
 def _analyser_surveillance(contexte):
     brutes = _capturer_brutes()
+    DETECTEUR.contexte = contexte
     r = DETECTEUR.analyser(RGB, THERM, contexte.get("verite"), reference=None if DEMO else REFERENCE)
     r.update(AUDIO.instantane())
+    r.update(r.pop("_audio", None) or {})   # version idéale : micro simulé
     r["id"] = datetime.now().strftime("%Y%m%d-%H%M%S")
     r["_brutes"] = brutes
     return r
@@ -363,8 +365,10 @@ def nouvel_essai():
         time.sleep(0.3)
     brutes = _capturer_brutes()
     try:
+        DETECTEUR.contexte = d
         r = DETECTEUR.analyser(RGB, THERM, d["verite"], reference=None if DEMO else REFERENCE)
         r.update(AUDIO.instantane())
+        r.update(r.pop("_audio", None) or {})   # version idéale : micro simulé
     except RuntimeError as e:
         return jsonify({"erreur": str(e)}), 503
     finally:

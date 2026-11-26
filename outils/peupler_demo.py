@@ -4,6 +4,7 @@
     python outils/peupler_demo.py --repetitions 3 # plus rapide
     python outils/peupler_demo.py --vider         # repartir d'un journal de démo vide
     python outils/peupler_demo.py --max S3=5 S4=5 # au plus 5 essais pour ces scénarios (jour et nuit confondus)
+    python outils/peupler_demo.py --ideal --vider --plan S1=17/6 S2=8/4 S3=11/0   # essais de jour / de nuit
 
 Sert à montrer le dashboard « plein », tel qu'il sera une fois toute la campagne faite : tous les
 scénarios, jour et nuit, plus quelques cycles de surveillance automatique pour le délai d'alerte.
@@ -66,6 +67,9 @@ def main(argv=None) -> int:
     ap.add_argument("--vider", action="store_true", help="effacer d'abord le journal de démo")
     ap.add_argument("--max", nargs="*", default=[], metavar="CODE=N",
                     help="plafond d'essais pour un scénario, toutes variantes confondues (ex. S3=5 S4=5)")
+    ap.add_argument("--plan", nargs="*", default=[], metavar="CODE=JOUR/NUIT",
+                    help="nombre exact d'essais de jour et de nuit par scénario (ex. S1=17/6) ; remplace "
+                         "--repetitions et --max ; les cycles automatiques sont pris sur ces nombres")
     ap.add_argument("--ideal", action="store_true",
                     help="version idéale : le système visé en fin de projet (journal data/demo-ideal)")
     ap.add_argument("--port", type=int, default=5177)
@@ -84,22 +88,34 @@ def main(argv=None) -> int:
         attendre(base, lambda: appel(base, "/api/etat")["modele"]["pret"], 120)
         cfg = appel(base, "/api/config")
         variantes = [v for v in cfg["variantes"] if v.lower().startswith(("jour", "nuit"))] or cfg["variantes"][:1]
-        plafond = {c: int(n) for c, n in (m.split("=", 1) for m in a.max)}
-        plan = []
-        for s in cfg["scenarios"]:
-            serie = [(s, v) for _ in range(a.repetitions) for v in variantes]   # jour et nuit alternés
-            plan += serie[:plafond.get(s["code"], len(serie))]
+        jour = next((v for v in variantes if v.lower().startswith("jour")), variantes[0])
+        nuit = next((v for v in variantes if v.lower().startswith("nuit")), variantes[-1])
+        vivants = [s for s in cfg["scenarios"] if s["verite"] == "vivant"] or cfg["scenarios"]
+        cycles = [(vivants[i % len(vivants)], variantes[i % len(variantes)]) for i in range(a.cycles)]
+        if a.plan:
+            voulu = {c: tuple(int(x) for x in n.split("/")) for c, n in (m.split("=", 1) for m in a.plan)}
+            plan = [(s, v) for s in cfg["scenarios"] for v, n in zip((jour, nuit), voulu.get(s["code"], (0, 0)))
+                    for _ in range(n)]
+            cycles = []
+            for _ in range(a.cycles):   # les cycles automatiques comptent dans le plan, pas en plus
+                k = next((i for i, (s, v) in enumerate(plan) if s["verite"] == "vivant" and v == jour), None)
+                if k is not None:
+                    cycles.append(plan.pop(k))
+        else:
+            plafond = {c: int(n) for c, n in (m.split("=", 1) for m in a.max)}
+            plan = []
+            for s in cfg["scenarios"]:
+                serie = [(s, v) for _ in range(a.repetitions) for v in variantes]   # jour et nuit alternés
+                plan += serie[:plafond.get(s["code"], len(serie))]
         note = "essai simulé (version idéale)" if a.ideal else "essai simulé (mode démo)"
         for fait, (s, v) in enumerate(plan, 1):
             appel(base, "/api/essais", {"scenario": s["code"], "variante": v, "verite": s["verite"],
                                         "commentaire": note})
             print(f"\r{fait}/{len(plan)} essais simulés", end="", flush=True)
         print()
-        vivants = [s for s in cfg["scenarios"] if s["verite"] == "vivant"] or cfg["scenarios"]
-        for i in range(a.cycles):
-            s = vivants[i % len(vivants)]
-            cycle_automatique(base, s["verite"], s["code"], variantes[i % len(variantes)])
-            print(f"\r{i + 1}/{a.cycles} cycles de surveillance", end="", flush=True)
+        for i, (s, v) in enumerate(cycles, 1):
+            cycle_automatique(base, s["verite"], s["code"], v)
+            print(f"\r{i}/{len(cycles)} cycles de surveillance", end="", flush=True)
         lanceur = "lancer_ideal.bat" if a.ideal else "lancer_demo.bat"
         print(f"\nJournal rempli : {journal}\nLancer {lanceur} puis ouvrir /resultats.")
     finally:

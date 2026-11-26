@@ -17,6 +17,7 @@ import time
 
 import cv2
 
+from . import simulation
 from .detection.catalogue import INCONNU
 from .detection.essai import analyser_essai
 from .detection.identification import est_adulte, fusionner
@@ -118,6 +119,8 @@ class DetecteurDemo(Detecteur):
 
     def _charger(self):
         self._pret = True
+        self._quotas = simulation.Quotas()
+        self.contexte = {}   # scénario et variante de l'essai en cours, donnés par l'application
 
     def detecter(self, frames, facteur_conf=1.0):
         return [[] for _ in frames]
@@ -134,7 +137,18 @@ class DetecteurDemo(Detecteur):
         # ce que la photo de démo contient vraiment, si elle le dit (jeu.json)
         contenu = next((s.photos.contenu(s.scene, s.jeu) for s in rgb if getattr(s, "jeu", None)), {})
         photo = any(getattr(s, "jeu", None) for s in rgb)
-        if ideal:   # système visé : les caméras ratent encore quelques présences, la thermique les rattrape
+        ctx = getattr(self, "contexte", None) or {}
+        sim = simulation.simuler(self._quotas, ctx.get("scenario", ""), ctx.get("variante", ""),
+                                 contenu.get("objets")) if ideal else None
+        audio = {}
+        if sim:     # version idéale : comportement attendu de chaque capteur pour ce scénario
+            vivant_rgb, vivant_th, objets = sim["vivant_rgb"], sim["vivant_thermique"], sim["objets"]
+            if thermique is None:
+                vivant_th = None
+            audio = {"audio_statut": "ok", "sons_audio": [sim["son"]] if sim["son"] else [],
+                     **{f"{nom}_score": (0.82 if nom == sim["son"] else 0.02)
+                        for nom in ("pleurs", "aboiement", "miaulement")}}
+        elif ideal:   # système visé : les caméras ratent encore quelques présences, la thermique les rattrape
             vivant_rgb = verite == "vivant" and (thermique is None or r() < 0.85)
             vivant_th = None if thermique is None else verite == "vivant"
             objets = list(contenu.get("objets") or ["sac à main"]) if verite == "objet" else []
@@ -160,9 +174,11 @@ class DetecteurDemo(Detecteur):
             "cameras_vivant": [rgb[2].id] if vivant_rgb and len(rgb) > 2 else [],
             "detections": [],
             "zones_nouvelles": 1 if objets else 0, "reference_utilisee": False, "lumiere_changee": False,
-            "luminosite": None, "cameras_aveugles": [],
-            "pixels_chauds": (140 if vivant_th else 3) if thermique is not None else None,
-            "tmax": (35.1 if vivant_th else 22.8) if thermique is not None else None,
+            "luminosite": (18 if sim["nuit"] else 126) if sim else None,
+            "cameras_aveugles": [s.id for s in rgb] if sim and sim["nuit"] and not (vivant_rgb or objets) else [],
+            "pixels_chauds": (140 if vivant_th else 3) if vivant_th is not None else None,
+            "tmax": (35.1 if vivant_th else 22.8) if vivant_th is not None else None,
+            "_audio": audio,
             "methode_thermique": "", "resolution_thermique": "",
             "latence_s": round(time.time() - t0, 2),
             "images_rgb": images,

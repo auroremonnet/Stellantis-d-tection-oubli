@@ -31,6 +31,10 @@ python outils/peupler_demo.py --ideal --vider --max S3=5 S4=5
 lancer_ideal.bat
 ```
 
+`--plan S1=17/6 S2=8/4 …` fixe le nombre d'essais de jour et de nuit par scénario. Dans cette version, chaque capteur
+suit le modèle de `care/simulation.py` : un enfant caché n'est trouvé que par la thermique et le micro, les caméras ne
+voient presque rien de nuit, les animaux sont testés sans thermique, une source chaude inerte trompe parfois la thermique.
+
 Le dashboard s'ouvre sous le bandeau « VERSION IDÉALE · SIMULATION », avec son propre journal (`data/demo-ideal/`),
 séparé des vrais essais (`data/essais/`). Les résultats y sont ceux du système visé, pas des mesures. Les images
 viennent de `data/demo/photos/<scène>/<jeu>/<caméra>.jpg` quand ce dossier existe (vraies photos de l'habitacle,
